@@ -6,11 +6,13 @@
     <title>深大智能导航 - 全动态视觉版</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        :root { --accent: #800000; --bg: #f4f4f7; --text: #333; --panel: rgba(255,255,255,0.98); }
+        /* 稍微加深了背景色以便衬托白色路网 */
+        :root { --accent: #800000; --bg: #e0e0e5; --text: #333; --panel: rgba(255,255,255,0.98); }
         .dark-mode { --bg: #0a0a0c; --text: #e0e0e0; --panel: rgba(30,30,35,0.98); }
         
         body { margin: 0; background: var(--bg); color: var(--text); font-family: -apple-system, sans-serif; overflow: hidden; transition: 0.3s; }
-        #map { height: 100vh; width: 100vw; transition: height 0.4s ease; background: #ddd; }
+        /* 初始地图背景设为深灰，突出白色线条 */
+        #map { height: 100vh; width: 100vw; transition: height 0.4s ease; background: #999; }
         .dark-mode #map { background: #050508; }
         
         #map.shrink { height: 60vh; }
@@ -204,7 +206,6 @@ function getLocation() {
         (position) => {
             const lat = position.coords.latitude;
             const lng = position.coords.longitude;
-            // 设置为起点
             setAsStart([lng, lat]);
             map.flyTo([lat, lng], 18);
             status.innerText = "📍 已成功定位当前位置";
@@ -233,7 +234,9 @@ async function init() {
         layers.green = L.geoJSON(g).addTo(map);
         layers.water = L.geoJSON(w).addTo(map);
         layers.buildings = L.geoJSON(b).addTo(map);
-        layers.roads = L.geoJSON(r).addTo(map);
+        // 初始化时设置路网为白色
+        layers.roads = L.geoJSON(r, { style: { color: "#ffffff", weight: 3, opacity: 0.8 } }).addTo(map);
+        
         engine = new PathEngine(r);
         pointsData = p;
 
@@ -271,7 +274,8 @@ map.on('zoomend', () => {
     if (layers.roads) layers.roads.eachLayer(l => {
         const bw = l.feature.properties.Width || 3;
         const sf = z <= 14 ? 0.4 : (z === 15 ? 0.6 : (z === 16 ? 1 : (z === 17 ? 1.5 : 2.2)));
-        l.setStyle({ weight: bw * sf });
+        // 缩放时保持白色
+        l.setStyle({ weight: bw * sf, color: "#ffffff" });
     });
 });
 
@@ -378,6 +382,9 @@ function updateThemeStyles() {
         buildings: { fillColor: "#e8e8e8", color: "#777777", weight: 2.5, fillOpacity: 0.8 }
     };
     Object.keys(s).forEach(k => { if(layers[k]) layers[k].setStyle(s[k]); });
+    
+    // 关键点：强制保持路网为白色，且不透明度稍高以保证可见度
+    if(layers.roads) layers.roads.setStyle({ color: "#ffffff", opacity: 0.9 });
 }
 
 function toggleFold() {
