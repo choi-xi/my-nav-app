@@ -3,8 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>深大智能导航</title>
+    <title>深大智能导航 - 离线算法版</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
         :root { --bg: #f8f9fa; --accent: #800000; --blue: #007AFF; --panel: rgba(255,255,255,0.98); }
         body { margin: 0; background: var(--bg); font-family: -apple-system, sans-serif; overflow: hidden; }
@@ -16,20 +17,17 @@
         .bottom-nav { position: fixed; bottom: 0; width: 100%; height: 40vh; background: var(--panel); transform: translateY(100%); transition: transform 0.4s; z-index: 1001; box-shadow: 0 -5px 20px rgba(0,0,0,0.1); }
         .bottom-nav.show { transform: translateY(0); }
         .nav-content { padding: 20px; border-top: 4px solid var(--accent); }
-        .locate-btn { position: absolute; right: 15px; bottom: 25px; z-index: 1002; width: 50px; height: 50px; border-radius: 50%; background: #fff; border: none; box-shadow: 0 4px 15px rgba(0,0,0,0.15); font-size: 24px; transition: 0.4s; }
-        .locate-btn.up { bottom: calc(40vh + 20px); }
         #status-bar { position: absolute; top: 75px; left: 5%; z-index: 1000; font-size: 11px; background: rgba(0,0,0,0.7); padding: 4px 10px; border-radius: 4px; color: #fff; }
     </style>
 </head>
 <body>
 
 <div class="top-bar">
-    <input type="text" id="destInput" list="pointsList" placeholder="搜索校内地点 (如: 汇智楼)...">
+    <input type="text" id="destInput" list="pointsList" placeholder="搜索地点...">
     <datalist id="pointsList"></datalist>
     <button class="action-btn" onclick="triggerNav()">导航</button>
 </div>
-<div id="status-bar">正在连接导航引擎...</div>
-<button class="locate-btn" id="locateBtn" onclick="requestLocation()">🎯</button>
+<div id="status-bar">正在加载本地数据...</div>
 <div id="map"></div>
 
 <div class="bottom-nav" id="bottomNav">
@@ -40,19 +38,11 @@
     </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/geojson-path-finder@2.1.0/dist/geojson-path-finder.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/geojson-path-finder/2.1.0/geojson-path-finder.min.js"></script>
 
 <script>
     const map = L.map('map', { zoomControl: false, attributionControl: false }).setView([22.532, 113.936], 16);
     let roadsData, pointsData, userLocation = null, currentRouteLayer = null;
-
-    const styles = {
-        green: { fillColor: "#C8E6C9", color: "#A5D6A7", weight: 0.5, fillOpacity: 0.7 },
-        water: { fillColor: "#B3E5FC", color: "#81D4FA", weight: 0.5, fillOpacity: 0.8 },
-        buildings: { fillColor: "#E0E0E0", color: "#BDBDBD", weight: 0.5, fillOpacity: 0.85 },
-        roads: { color: "#ffffff", weight: 3, opacity: 0.7 }
-    };
 
     async function init() {
         try {
@@ -64,19 +54,17 @@
                 fetch('points.json').then(res => res.json())
             ]);
 
-            L.geoJSON(g, { style: styles.green }).addTo(map);
-            L.geoJSON(w, { style: styles.water }).addTo(map);
-            L.geoJSON(b, { style: styles.buildings }).addTo(map);
-            L.geoJSON(r, { style: styles.roads }).addTo(map);
+            // 渲染地图图层
+            L.geoJSON(g, { style: { fillColor: "#C8E6C9", color: "#A5D6A7", weight: 0.5, fillOpacity: 0.7 } }).addTo(map);
+            L.geoJSON(w, { style: { fillColor: "#B3E5FC", color: "#81D4FA", weight: 0.5, fillOpacity: 0.8 } }).addTo(map);
+            L.geoJSON(b, { style: { fillColor: "#E0E0E0", color: "#BDBDBD", weight: 0.5, fillOpacity: 0.85 } }).addTo(map);
+            L.geoJSON(r, { style: { color: "#ffffff", weight: 3, opacity: 0.7 } }).addTo(map);
 
-            // 针对你的 roads.json 进行深度清洗：移除第三维 null 值
-            r.features.forEach((f, i) => {
-                f.properties.id = i;
-                let c = f.geometry.coordinates;
-                // 兼容嵌套数组
-                if (Array.isArray(c[0][0])) c = c[0];
-                // 强制只保留 [x, y]，剔除 [x, y, null]
-                f.geometry.coordinates = c.map(pt => [pt[0], pt[1]]);
+            // 清理道路坐标（丢弃 Z 轴 null）
+            r.features.forEach(f => {
+                if (f.geometry.type === "LineString") {
+                    f.geometry.coordinates = f.geometry.coordinates.map(c => [c[0], c[1]]);
+                }
             });
 
             roadsData = r;
@@ -90,75 +78,47 @@
                     const opt = document.createElement('option');
                     opt.value = name;
                     list.appendChild(opt);
-                    layer.bindPopup(`<b>${name}</b><br><button onclick="startNav('${name}')" style="margin-top:5px;">到这去</button>`);
+                    layer.bindPopup(name);
                 }
             }).addTo(map);
 
-            document.getElementById('status-bar').innerText = "加载成功！请点击白色道路设置起点";
+            document.getElementById('status-bar').innerText = "加载成功！点击路面设为起点";
         } catch (e) {
-            document.getElementById('status-bar').innerText = "库文件拦截，请检查浏览器设置";
-            console.error(e);
+            document.getElementById('status-bar').innerText = "配置错误，请检查仓库文件";
         }
     }
-
-    function requestLocation() {
-        map.locate({ setView: true, enableHighAccuracy: true });
-    }
-
-    map.on('locationfound', e => {
-        userLocation = e.latlng;
-        if (!window.uM) window.uM = L.circleMarker(e.latlng, { radius: 8, fillColor: '#007AFF', color: '#fff', weight: 3, fillOpacity: 1 }).addTo(map);
-        else window.uM.setLatLng(e.latlng);
-    });
 
     map.on('click', e => {
         userLocation = e.latlng;
         if (!window.uM) window.uM = L.circleMarker(e.latlng, { radius: 8, fillColor: '#007AFF', color: '#fff', weight: 3, fillOpacity: 1 }).addTo(map);
         else window.uM.setLatLng(e.latlng);
-        document.getElementById('status-bar').innerText = "起点已设为点击位置";
     });
 
     function triggerNav() {
         const val = document.getElementById('destInput').value;
-        if (val) startNav(val);
-    }
-
-    function startNav(name) {
-        if (!userLocation) return alert("请先在地图道路上点一下作为起点");
+        if (!userLocation) return alert("请先在地图道路上点击一点作为起点");
         
-        // 检查库是否成功加载
-        if (typeof geojsonPathFinder === 'undefined') {
-            return alert("导航引擎被浏览器拦截，请关闭隐私模式或更换浏览器重试。");
-        }
-
-        const target = pointsData.features.find(f => f.properties.name === name);
+        const target = pointsData.features.find(f => f.properties.name === val);
         if (!target) return alert("地点不存在");
 
-        try {
-            const finder = new geojsonPathFinder(roadsData, { precision: 0.0001 });
-            const start = { geometry: { coordinates: [userLocation.lng, userLocation.lat] } };
-            const end = { geometry: { coordinates: target.geometry.coordinates } };
+        // 核心算法调用
+        const finder = new geojsonPathFinder(roadsData);
+        const start = { geometry: { coordinates: [userLocation.lng, userLocation.lat] } };
+        const end = { geometry: { coordinates: target.geometry.coordinates } };
+        
+        const result = finder.findPath(start, end);
 
-            const result = finder.findPath(start, end);
-
-            if (result && result.path) {
-                if (currentRouteLayer) map.removeLayer(currentRouteLayer);
-                const latlngs = result.path.map(pt => [pt[1], pt[0]]);
-                currentRouteLayer = L.polyline(latlngs, { color: '#800000', weight: 8, opacity: 0.9, lineJoin: 'round' }).addTo(map);
-                
-                document.getElementById('targetName').innerText = name;
-                document.getElementById('routeInfo').innerText = `找到路径！约 ${Math.round(result.weight * 100000)} 米`;
-                document.getElementById('bottomNav').classList.add('show');
-                document.getElementById('map').classList.add('shrink');
-                document.getElementById('locateBtn').classList.add('up');
-                
-                map.fitBounds(currentRouteLayer.getBounds(), { padding: [50, 50] });
-            } else {
-                alert("路径不通：请尝试点击底图中的白色道路区域。");
-            }
-        } catch (err) {
-            console.error(err);
-            alert("计算引擎异常");
+        if (result && result.path) {
+            if (currentRouteLayer) map.removeLayer(currentRouteLayer);
+            currentRouteLayer = L.polyline(result.path.map(pt => [pt[1], pt[0]]), { color: '#800000', weight: 8, opacity: 0.9 }).addTo(map);
+            
+            document.getElementById('targetName').innerText = val;
+            document.getElementById('routeInfo').innerText = "已生成步行路线";
+            document.getElementById('bottomNav').classList.add('show');
+            document.getElementById('map').classList.add('shrink');
+            map.fitBounds(currentRouteLayer.getBounds(), { padding: [50, 50] });
+        } else {
+            alert("无法到达：请确保起点点击在白色道路上");
         }
     }
 
