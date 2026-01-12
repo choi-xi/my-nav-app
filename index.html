@@ -3,76 +3,69 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>深大智能导航 - 交互版</title>
+    <title>深大智能导航 - 最终修复版</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
     <style>
         :root { --bg: #ffffff; --text: #333; --panel: rgba(255,255,255,0.98); --accent: #800000; --blue: #007AFF; }
         body.dark-mode { --bg: #121212; --text: #e0e0e0; --panel: rgba(30,30,30,0.98); --accent: #ff4d4d; }
-        
         body { margin: 0; background: var(--bg); font-family: -apple-system, sans-serif; overflow: hidden; }
-        #map { height: 100vh; width: 100vw; background: #eee; transition: height 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
-        #map.shrink { height: 60vh; } /* 导航开启后地图缩小 */
+        
+        /* 核心容器层级：底图在下，点在上 */
+        #map { height: 100vh; width: 100vw; background: #f8f8f8; transition: height 0.5s cubic-bezier(0.4, 0, 0.2, 1); z-index: 1; }
+        #map.shrink { height: 60vh; }
 
-        /* 搜索栏与按键 */
         .top-bar { position: absolute; top: 15px; width: 92%; left: 4%; z-index: 1000; display: flex; gap: 8px; }
         #destInput { flex: 1; padding: 12px 18px; border-radius: 12px; border: none; box-shadow: 0 4px 15px rgba(0,0,0,0.1); font-size: 16px; background: var(--panel); color: var(--text); outline: none; }
         
-        .action-btn { background: var(--blue); color: white; border: none; padding: 0 15px; border-radius: 12px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 10px rgba(0,122,255,0.3); display: flex; align-items: center; justify-content: center; }
+        .action-btn { background: var(--blue); color: white; border: none; padding: 0 15px; border-radius: 12px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 10px rgba(0,122,255,0.3); }
         .theme-btn { background: var(--panel); border: none; width: 45px; height: 45px; border-radius: 12px; cursor: pointer; font-size: 18px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); display: flex; align-items: center; justify-content: center; }
 
-        /* 状态提示 */
-        #status-bar { position: absolute; top: 75px; left: 4%; z-index: 1000; background: rgba(0,0,0,0.6); color: white; padding: 4px 10px; border-radius: 6px; font-size: 11px; opacity: 0.8; }
-
-        /* 底部路线面板：默认隐藏并下沉 */
         .bottom-nav { 
             position: fixed; bottom: 0; width: 100%; height: 40vh; 
             background: var(--panel); color: var(--text); 
-            border-top: 1px solid rgba(0,0,0,0.1); z-index: 1001;
-            transform: translateY(100%); /* 隐藏在屏幕下方 */
+            z-index: 1001; transform: translateY(100%); 
             transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-            display: flex; flex-direction: column;
-            box-shadow: 0 -5px 20px rgba(0,0,0,0.1);
+            display: flex; flex-direction: column; box-shadow: 0 -5px 20px rgba(0,0,0,0.1);
         }
-        .bottom-nav.show { transform: translateY(0); } /* 动画升起 */
+        .bottom-nav.show { transform: translateY(0); }
 
         .nav-tabs { display: flex; height: 100%; }
         .nav-card { flex: 1; padding: 15px 12px; border-right: 1px solid rgba(0,0,0,0.05); display: flex; flex-direction: column; cursor: pointer; }
-        .nav-card.active { background: rgba(128, 0, 0, 0.05); border-top: 4px solid var(--accent); }
+        .nav-card.active { border-top: 4px solid var(--accent); background: rgba(128, 0, 0, 0.05); }
         .nav-card h4 { margin: 0 0 8px 0; font-size: 14px; color: var(--accent); }
-        .nav-card .desc { font-size: 11px; line-height: 1.5; color: #666; flex-grow: 1; }
-        
-        /* 定位按钮样式 */
-        .locate-btn { position: absolute; right: 15px; bottom: 20px; z-index: 1000; width: 45px; height: 45px; border-radius: 50%; background: var(--panel); border: none; box-shadow: 0 4px 10px rgba(0,0,0,0.2); font-size: 20px; transition: bottom 0.5s; }
+        .nav-card .desc { font-size: 11px; line-height: 1.5; color: #666; }
+
+        .locate-btn { position: absolute; right: 15px; bottom: 20px; z-index: 1002; width: 50px; height: 50px; border-radius: 50%; background: #fff; border: none; box-shadow: 0 4px 15px rgba(0,0,0,0.2); font-size: 24px; transition: bottom 0.5s; }
         .locate-btn.up { bottom: calc(40vh + 20px); }
+
+        /* 修复 Popup 样式使其可见 */
+        .leaflet-popup { z-index: 2000 !important; }
     </style>
 </head>
 <body>
 
 <div class="top-bar">
-    <input type="text" id="destInput" list="pointsList" placeholder="要去哪里？" oninput="checkInput(this.value)">
+    <input type="text" id="destInput" list="pointsList" placeholder="搜索深大地点...">
     <datalist id="pointsList"></datalist>
     <button class="action-btn" onclick="triggerNav()">导航</button>
     <button class="theme-btn" onclick="toggleTheme()">🌓</button>
 </div>
 
-<div id="status-bar">就绪 | 点击地图可模拟位置</div>
-
 <button class="locate-btn" id="locateBtn" onclick="requestLocation()">🎯</button>
-
 <div id="map"></div>
 
 <div class="bottom-nav" id="bottomNav">
     <div class="nav-tabs">
         <div class="nav-card active" id="card-best" onclick="displayRoute('best')">
-            <h4 id="h-best">舒适最优</h4>
-            <div class="desc" id="d-best">计算中...</div>
+            <h4 id="h-best">推荐路线</h4>
+            <div class="desc" id="d-best">正在分析...</div>
         </div>
         <div class="nav-card" id="card-alt1" onclick="displayRoute('alt1')">
             <h4>最短距离</h4>
             <div class="desc" id="d-alt1">——</div>
         </div>
         <div class="nav-card" id="card-alt2" onclick="displayRoute('alt2')">
-            <h4>备选路线</h4>
+            <h4>更宽坦途</h4>
             <div class="desc" id="d-alt2">——</div>
         </div>
     </div>
@@ -82,63 +75,60 @@
 <script src="https://unpkg.com/geojson-path-finder/dist/geojson-path-finder.min.js"></script>
 
 <script>
-    // 1. 初始化
+    // 1. 设置坐标与地图
     const imageBounds = [[22.525063791, 113.92663566], [22.5394650408, 113.946736297]];
     const map = L.map('map', { 
         maxBounds: imageBounds, 
         zoomControl: false,
-        attributionControl: false,
-        tap: true 
+        attributionControl: false
     }).setView([22.532, 113.936], 16);
     
-    const groundLayer = L.imageOverlay('szu_base.png', imageBounds, { interactive: true }).addTo(map);
+    // 关键：降低底图层级 (zIndex)
+    const groundLayer = L.imageOverlay('szu_base.png', imageBounds, { 
+        zIndex: 1, 
+        interactive: true 
+    }).addTo(map);
 
     let isNight = false, roadsData, pointsData, userLocation = null;
     let routes = { best: null, alt1: null, alt2: null };
     let currentLayers = [];
 
-    // 2. 加载与清洗
+    // 2. 加载数据
     Promise.all([
         fetch('roads.json').then(r => r.json()),
         fetch('points.json').then(r => r.json())
     ]).then(([roads, points]) => {
+        // 数据清洗
         roads.features.forEach((f, i) => {
             f.properties.id = f.properties.id || `r_${i}`;
             f.geometry.coordinates = f.geometry.coordinates.map(c => [parseFloat(c[0]), parseFloat(c[1])]);
         });
         roadsData = roads;
         pointsData = points;
-        const list = document.getElementById('pointsList');
-        points.features.forEach(f => {
-            const opt = document.createElement('option');
-            opt.value = f.properties.name;
-            list.appendChild(opt);
-        });
+        
+        // 渲染点 (提高 zIndex 并使用显眼的颜色)
+        L.geoJSON(points, {
+            pointToLayer: (f, latlng) => {
+                const marker = L.circleMarker(latlng, {
+                    radius: 7,
+                    fillColor: "#800000",
+                    color: "#fff",
+                    weight: 2,
+                    fillOpacity: 1,
+                    pane: 'markerPane' // 确保点在顶层
+                });
+                return marker;
+            },
+            onEachFeature: (f, layer) => {
+                layer.bindPopup(`<b>${f.properties.name}</b><br><button onclick="startNavigation('${f.properties.name}')" style="background:#007AFF;color:#fff;border:none;padding:5px 10px;border-radius:4px;margin-top:5px;width:100%">设为终点</button>`);
+                const opt = document.createElement('option');
+                opt.value = f.properties.name;
+                document.getElementById('pointsList').appendChild(opt);
+            }
+        }).addTo(map);
     });
 
-    // 3. 导航触发控制
-    function triggerNav() {
-        const val = document.getElementById('destInput').value;
-        if(!val) return alert("请输入目的地");
-        
-        // 如果没有定位，先尝试定位一次
-        if(!userLocation) {
-            document.getElementById('status-bar').innerText = "尝试获取定位...";
-            requestLocation();
-            // 延迟一点点等定位
-            setTimeout(() => startNavigation(val), 1000);
-        } else {
-            startNavigation(val);
-        }
-    }
-
-    function checkInput(val) {
-        if(pointsData.features.some(f => f.properties.name === val)) {
-            startNavigation(val);
-        }
-    }
-
-    // 4. 定位逻辑 (iOS 兼容)
+    // 3. 定位逻辑
     function requestLocation() {
         map.locate({ setView: true, enableHighAccuracy: true });
     }
@@ -146,78 +136,77 @@
     map.on('locationfound', e => {
         userLocation = e.latlng;
         updateUserMarker(e.latlng);
-        document.getElementById('status-bar').innerText = "定位成功";
     });
 
+    // 模拟点击定位 (如果你在室内没信号，点击地图任意点即可开始导航)
     map.on('click', e => {
         userLocation = e.latlng;
         updateUserMarker(e.latlng);
-        document.getElementById('status-bar').innerText = "起点已设为点击处";
     });
 
     function updateUserMarker(latlng) {
         if(!window.userMarker) {
-            window.userMarker = L.circleMarker(latlng, {radius: 8, color: '#fff', weight: 2, fillColor: '#007AFF', fillOpacity: 1}).addTo(map);
+            window.userMarker = L.circleMarker(latlng, {radius: 10, color: '#fff', weight: 3, fillColor: '#007AFF', fillOpacity: 1, pane: 'markerPane'}).addTo(map);
         } else {
             window.userMarker.setLatLng(latlng);
         }
     }
 
-    // 5. 核心导航与动画逻辑
+    // 4. 导航逻辑
+    function triggerNav() {
+        const val = document.getElementById('destInput').value;
+        if(val) startNavigation(val);
+        else alert("请输入地点或直接点击地图上的点");
+    }
+
     function startNavigation(name) {
-        if(!userLocation) return alert("请先点击右下角 🎯 定位，或点击地图设置起点");
+        if(!userLocation) return alert("请先点击右下角 🎯 定位，或直接点击地图设置起点");
         
         const target = pointsData.features.find(f => f.properties.name === name);
         if(!target) return;
 
-        try {
-            const finder = new geojsonPathFinder(roadsData, {
-                weightFn: (a, b, props) => props.length * (penaltyIds.includes(props.id) ? 50 : 1)
-            });
+        // 核心算法：增加精度容错
+        const finder = new geojsonPathFinder(roadsData, {
+            precision: 0.0001, // 增加匹配精度
+            weightFn: (a, b, p) => p.length
+        });
 
-            // 计算三条路（简化权重仅演示切换）
-            const r1 = calculateSingle('best', target.geometry.coordinates);
-            if(!r1) throw new Error();
-            routes.best = r1;
-            routes.alt1 = calculateSingle('alt', target.geometry.coordinates, r1.edgeInfos.map(e=>e.id));
-            
-            // 动画开启：显示面板，缩小地图
+        const path = finder.findPath(
+            { geometry: { coordinates: [userLocation.lng, userLocation.lat] } },
+            { geometry: { coordinates: target.geometry.coordinates } }
+        );
+
+        if(path) {
+            routes.best = path;
             document.getElementById('bottomNav').classList.add('show');
             document.getElementById('map').classList.add('shrink');
             document.getElementById('locateBtn').classList.add('up');
-            
             displayRoute('best');
             updateUI();
-        } catch (e) {
-            alert("规划失败：起点距离路网过远");
+        } else {
+            alert("无法规划路线：起点离路网太远，请尝试点击校道附近的位置");
         }
-    }
-
-    function calculateSingle(type, dest, penalty = []) {
-        const f = new geojsonPathFinder(roadsData, {
-            weightFn: (a, b, p) => p.length * (penalty.includes(p.id) ? 20 : 1)
-        });
-        return f.findPath({geometry:{coordinates:[userLocation.lng, userLocation.lat]}}, {geometry:{coordinates:dest}});
     }
 
     function displayRoute(type) {
         currentLayers.forEach(l => map.removeLayer(l));
         currentLayers = [];
-        document.querySelectorAll('.nav-card').forEach(c => c.classList.remove('active'));
-        document.getElementById('card-' + type).classList.add('active');
         const r = routes[type];
         if(r) {
-            const poly = L.polyline(r.path.map(p => [p[1], p[0]]), {color: '#800000', weight: 8, opacity: 0.8}).addTo(map);
+            const poly = L.polyline(r.path.map(p => [p[1], p[0]]), {
+                color: '#800000', 
+                weight: 8, 
+                opacity: 0.8,
+                pane: 'overlayPane'
+            }).addTo(map);
             currentLayers.push(poly);
-            map.fitBounds(poly.getBounds(), {padding: [30, 30]});
+            map.fitBounds(poly.getBounds(), {padding: [50, 50]});
         }
     }
 
     function updateUI() {
-        ['best', 'alt1', 'alt2'].forEach(t => {
-            const r = routes[t];
-            if(r) document.getElementById('d-'+t).innerText = `预计 ${Math.round(r.weight*100)} 米`;
-        });
+        const r = routes.best;
+        if(r) document.getElementById('d-best').innerText = `路程: ${Math.round(r.weight*100)} 米`;
     }
 
     function toggleTheme() {
