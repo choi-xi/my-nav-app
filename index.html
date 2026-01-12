@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>深大智能导航 - 修复版</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <style>
+        :root { --bg: #ffffff; --text: #333; --panel: rgba(255,255,255,0.95); --accent: #800000; }
+        body.dark-mode { --bg: #121212; --text: #e0e0e0; --panel: rgba(30,30,30,0.95); --accent: #ff4d4d; }
+        body { margin: 0; transition: background 0.8s ease; background: var(--bg); font-family: -apple-system, sans-serif; overflow: hidden; }
+        #map { height: 60vh; width: 100vw; background: #eee; transition: filter 0.8s ease; }
+        .top-bar { position: absolute; top: 15px; width: 90%; left: 5%; z-index: 1000; display: flex; gap: 10px; }
+        #destInput { flex: 1; padding: 12px 20px; border-radius: 25px; border: none; box-shadow: 0 4px 15px rgba(0,0,0,0.15); font-size: 16px; background: var(--panel); color: var(--text); outline: none; }
+        .theme-btn { background: var(--panel); border: none; width: 45px; height: 45px; border-radius: 50%; cursor: pointer; font-size: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.15); display: flex; align-items: center; justify-content: center; }
+        .bottom-nav { position: fixed; bottom: 0; width: 100%; height: 40vh; background: var(--panel); color: var(--text); display: flex; flex-direction: column; border-top: 1px solid rgba(0,0,0,0.1); z-index: 1001; }
+        .nav-tabs { display: flex; height: 100%; }
+        .nav-card { flex: 1; padding: 15px 10px; border-right: 1px solid rgba(0,0,0,0.05); display: flex; flex-direction: column; cursor: pointer; transition: 0.3s; }
+        .nav-card.active { background: rgba(128, 0, 0, 0.08); border-top: 4px solid var(--accent); }
+        .nav-card h4 { margin: 0 0 8px 0; font-size: 14px; color: var(--accent); }
+        .nav-card .desc { font-size: 11px; line-height: 1.5; color: #666; overflow-y: auto; flex-grow: 1; }
+        .nav-btn { background: var(--accent); color: white; border: none; padding: 8px 15px; border-radius: 5px; margin-top: 10px; cursor: pointer; width: 100%; font-weight: bold; }
+        /* 调试提示 */
+        #debug-info { position: absolute; top: 70px; left: 5%; background: rgba(0,0,0,0.6); color: #fff; padding: 5px 10px; border-radius: 5px; font-size: 10px; z-index: 1000; pointer-events: none; }
+    </style>
+</head>
+<body>
+
+<div class="top-bar">
+    <input type="text" id="destInput" list="pointsList" placeholder="搜索深大地点..." oninput="checkInput(this.value)">
+    <datalist id="pointsList"></datalist>
+    <button class="theme-btn" onclick="toggleTheme()">🌓</button>
+</div>
+<div id="debug-info">正在加载数据...</div>
+<div id="map"></div>
+
+<div class="bottom-nav">
+    <div class="nav-tabs">
+        <div class="nav-card" id="card-best" onclick="displayRoute('best')">
+            <h4 id="h-best">舒适最优</h4>
+            <div class="desc" id="d-best">请先允许定位或点击地图</div>
+        </div>
+        <div class="nav-card" id="card-alt1" onclick="displayRoute('alt1')">
+            <h4 id="h-alt1">备选：更短</h4>
+            <div class="desc" id="d-alt1">——</div>
+        </div>
+        <div class="nav-card" id="card-alt2" onclick="displayRoute('alt2')">
+            <h4 id="h-alt2">备选：更安全</h4>
+            <div class="desc" id="d-alt2">——</div>
+        </div>
+    </div>
+</div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://unpkg.com/geojson-path-finder/dist/geojson-path-finder.min.js"></script>
+
+<script>
+    const imageBounds = [[22.525063791, 113.92663566], [22.5394650408, 113.946736297]];
+    const map = L.map('map', { maxBounds: imageBounds, maxBoundsViscosity: 1.0, minZoom: 15 }).setView([22.532, 113.936], 16);
+    
+    const groundLayer = L.imageOverlay('szu_base.png', imageBounds, { opacity: 1, zIndex: 1, interactive: true }).addTo(map);
+
+    let isNight = false, roadsData, pointsData, userLocation;
+    let routes = { best: null, alt1: null, alt2: null };
+    let currentLayers = [];
+
+    // 1. 数据加载与【深度清洗】
+    Promise.all([
+        fetch('roads.json').then(r => r.json()),
+        fetch('points.json').then(r => r.json())
+    ]).then(([roads, points]) => {
+        // 清洗 roads.json：移除 coordinates 中的第3个 null 值，并确保有 ID
+        roads.features = roads.features.filter(f => f.geometry && f.geometry.coordinates);
+        roads.features.forEach((f, i) => {
+            f.properties.id = f.properties.id || `r_${i}`;
+            f.geometry.coordinates = f.geometry.coordinates.map(c => [parseFloat(c[0]), parseFloat(c[1])]);
+        });
+        
+        roadsData = roads;
+        pointsData = points;
+        document.getElementById('debug-info').innerText = "数据已就绪，等待定位...";
+
+        const list = document.getElementById('pointsList');
+        L.geoJSON(points, {
+            pointToLayer: (f, l) => {
+                const opt = document.createElement('option');
+                opt.value = f.properties.name;
+                list.appendChild(opt);
+                return L.circleMarker(l, { radius: 5, color: '#800000', opacity: 0 });
+            },
+            onEachFeature: (f, layer) => {
+                layer.bindPopup(`<b>${f.properties.name}</b><br><button class="nav-btn" onclick="startNavigation('${f.properties.name}')">到这里去</button>`);
+            }
+        }).addTo(map);
+    }).catch(err => {
+        document.getElementById('debug-info').innerText = "数据加载失败: " + err;
+    });
+
+    // 2. 定位处理（包含调试模拟功能）
+    map.on('locationfound', e => {
+        userLocation = e.latlng;
+        updateUserMarker(e.latlng);
+        document.getElementById('debug-info').innerText = "定位成功 (WGS84)";
+    });
+
+    // 如果手机定位不准，允许点击地图手动设置“我的位置”进行测试
+    map.on('click', e => {
+        userLocation = e.latlng;
+        updateUserMarker(e.latlng);
+        document.getElementById('debug-info').innerText = "手动设置起点: " + e.latlng.lat.toFixed(4) + "," + e.latlng.lng.toFixed(4);
+    });
+
+    function updateUserMarker(latlng) {
+        if(!window.userMarker) window.userMarker = L.circleMarker(latlng, {radius: 8, color: '#fff', weight: 2, fillColor: '#007AFF', fillOpacity: 1, zIndexOffset: 1000}).addTo(map);
+        else window.userMarker.setLatLng(latlng);
+    }
+
+    map.locate({setView: true, watch: true, enableHighAccuracy: true});
+
+    // 3. 导航核心逻辑
+    async function startNavigation(name) {
+        if(!userLocation) return alert("请先开启定位或在地图上点击选择你的位置");
+        
+        document.getElementById('destInput').value = name;
+        const target = pointsData.features.find(f => f.properties.name === name);
+        if(!target) return;
+        map.closePopup();
+
+        // 尝试计算路径
+        try {
+            routes.best = calculatePath('best', target.geometry.coordinates);
+            if(!routes.best) throw new Error("无法连接到路网");
+            
+            const bestIds = routes.best.edgeInfos.map(e => e.id);
+            routes.alt1 = calculatePath('alt1', target.geometry.coordinates, bestIds);
+            routes.alt2 = calculatePath('alt2', target.geometry.coordinates, [...bestIds, ...(routes.alt1?.edgeInfos.map(e => e.id) || [])]);
+
+            updateUI();
+            displayRoute('best');
+            document.getElementById('debug-info').innerText = "规划完成";
+        } catch (e) {
+            document.getElementById('debug-info').innerText = "规划失败: 起点或终点不在路网范围内";
+            alert("规划失败：请尝试移动到最近的校道上再重试。");
+        }
+    }
+
+    function calculatePath(type, destCoords, penaltyIds = []) {
+        // 创建路径查找器实例
+        const finder = new geojsonPathFinder(roadsData, {
+            weightFn: (a, b, props) => {
+                const { length: L, width: W, env: E, safe: S } = props;
+                const penalty = penaltyIds.includes(props.id) ? 100 : 1;
+                let w = 0;
+                if(!isNight){
+                    if(type === 'best') w = (L*0.2 + W*0.2 + E*0.4 + S*0.2);
+                    if(type === 'alt1') w = (L*0.7 + W*0.2 + E*0.1); // 增强长度占比
+                    if(type === 'alt2') w = (L*0.3 + W*0.3 + S*0.4);
+                } else {
+                    if(type === 'best') w = (L*0.2 + W*0.2 + E*0.2 + S*0.4);
+                    if(type === 'alt1') w = (L*0.7 + W*0.1 + S*0.2);
+                    if(type === 'alt2') w = (L*0.2 + W*0.2 + S*0.2 + E*0.4);
+                }
+                return w * penalty;
+            }
+        });
+
+        // 查找路径
+        return finder.findPath(
+            { geometry: { coordinates: [userLocation.lng, userLocation.lat] } },
+            { geometry: { coordinates: destCoords } }
+        );
+    }
+
+    function displayRoute(type) {
+        currentLayers.forEach(l => map.removeLayer(l));
+        currentLayers = [];
+        document.querySelectorAll('.nav-card').forEach(c => c.classList.remove('active'));
+        document.getElementById('card-' + type).classList.add('active');
+
+        const r = routes[type];
+        if(r) {
+            const color = type === 'best' ? '#800000' : (type === 'alt1' ? '#007AFF' : '#34C759');
+            const poly = L.polyline(r.path.map(p => [p[1], p[0]]), {color, weight: 8, opacity: 0.8, lineJoin: 'round'}).addTo(map);
+            currentLayers.push(poly);
+            map.fitBounds(poly.getBounds(), {padding: [50, 50]});
+        }
+    }
+
+    function updateUI() {
+        ['best', 'alt1', 'alt2'].forEach(t => {
+            const r = routes[t];
+            const div = document.getElementById('d-'+t);
+            if(r) {
+                const dist = (r.weight * 100).toFixed(0);
+                div.innerHTML = `预计: ${dist}米<br>路线已生成`;
+            } else { div.innerHTML = "不可达"; }
+        });
+    }
+
+    function toggleTheme() {
+        isNight = !isNight;
+        document.body.classList.toggle('dark-mode');
+        const img = groundLayer.getElement();
+        if(img) img.style.filter = isNight ? "brightness(0.4) contrast(1.2) hue-rotate(180deg)" : "none";
+        if(document.getElementById('destInput').value) startNavigation(document.getElementById('destInput').value);
+    }
+
+    function checkInput(val) {
+        if(pointsData.features.some(f => f.properties.name === val)) startNavigation(val);
+    }
+</script>
+</body>
+</html>
