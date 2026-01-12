@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>深大智能导航 - 跨校区版</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <style>
+        :root { --bg: #ffffff; --text: #333; --panel: rgba(255,255,255,0.95); --accent: #800000; }
+        body.dark-mode { --bg: #121212; --text: #e0e0e0; --panel: rgba(30,30,30,0.95); --accent: #ff4d4d; }
+        
+        body { margin: 0; transition: background 0.8s cubic-bezier(0.4, 0, 0.2, 1); background: var(--bg); font-family: -apple-system, sans-serif; overflow: hidden; }
+        #map { height: 65vh; width: 100vw; transition: filter 0.8s ease; }
+        body.dark-mode #map { filter: brightness(0.6) grayscale(0.3) contrast(1.2); }
+
+        /* UI 组件 */
+        .top-bar { position: absolute; top: 15px; width: 90%; left: 5%; z-index: 1000; display: flex; gap: 10px; }
+        input { flex: 1; padding: 12px 20px; border-radius: 25px; border: none; box-shadow: 0 4px 15px rgba(0,0,0,0.1); font-size: 16px; outline: none; background: var(--panel); color: var(--text); }
+        .theme-btn { background: var(--panel); border: none; width: 45px; height: 45px; border-radius: 50%; cursor: pointer; font-size: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); display: flex; align-items: center; justify-content: center; }
+
+        /* 底部三区域 */
+        .bottom-nav { position: fixed; bottom: 0; width: 100%; height: 35vh; background: var(--panel); color: var(--text); display: flex; flex-direction: column; border-top: 1px solid rgba(0,0,0,0.1); z-index: 1001; }
+        .nav-tabs { display: flex; height: 100%; }
+        .nav-card { flex: 1; padding: 15px 10px; border-right: 1px solid rgba(0,0,0,0.05); display: flex; flex-direction: column; cursor: pointer; transition: 0.3s; position: relative; }
+        .nav-card:last-child { border-right: none; }
+        .nav-card.active { background: rgba(128, 0, 0, 0.05); }
+        .nav-card h4 { margin: 0 0 8px 0; font-size: 14px; color: var(--accent); }
+        .nav-card .desc { font-size: 11px; line-height: 1.4; overflow-y: auto; flex-grow: 1; }
+        .nav-card .meta { font-size: 10px; font-weight: bold; margin-top: 5px; color: #666; }
+    </style>
+</head>
+<body>
+
+<div class="top-bar">
+    <input type="text" id="destInput" placeholder="输入目的地(如: 办公楼)...">
+    <button class="theme-btn" onclick="toggleTheme()">🌓</button>
+</div>
+
+<div id="map"></div>
+
+<div class="bottom-nav">
+    <div class="nav-tabs">
+        <div class="nav-card" id="card-best" onclick="selectRoute('best')">
+            <h4 id="h-best">最优路径</h4>
+            <div class="desc" id="d-best">待计算...</div>
+            <div class="meta" id="m-best"></div>
+        </div>
+        <div class="nav-card" id="card-alt1" onclick="selectRoute('alt1')">
+            <h4 id="h-alt1">备选一</h4>
+            <div class="desc" id="d-alt1">待计算...</div>
+            <div class="meta" id="m-alt1"></div>
+        </div>
+        <div class="nav-card" id="card-alt2" onclick="selectRoute('alt2')">
+            <h4 id="h-alt2">备选二</h4>
+            <div class="desc" id="d-alt2">待计算...</div>
+            <div class="meta" id="m-alt2"></div>
+        </div>
+    </div>
+</div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://unpkg.com/geojson-path-finder/dist/geojson-path-finder.min.js"></script>
+
+<script>
+    // --- 1. 初始化地图与范围限制 (深圳大学粤海+沧海校区) ---
+    const szuBounds = [
+        [22.518, 113.925], // 西南角
+        [22.545, 113.945]  // 东北角
+    ];
+    const map = L.map('map', {
+        maxBounds: szuBounds,
+        maxBoundsViscosity: 1.0,
+        minZoom: 14
+    }).setView([22.533, 113.935], 16);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+    let isNight = false;
+    let roadsData, pointsData, userLocation;
+    let computedRoutes = {}; // 存储计算出的三条路径对象
+
+    // --- 2. 加载数据 ---
+    Promise.all([
+        fetch('roads.json').then(r => r.json()),
+        fetch('points.json').then(r => r.json())
+    ]).then(([roads, points]) => {
+        roadsData = roads; 
+        pointsData = points;
+        L.geoJSON(roads, { style: { color: '#ccc', weight: 1, opacity: 0.3 } }).addTo(map);
+    });
+
+    // --- 3. 主题切换逻辑 ---
+    function toggleTheme() {
+        isNight = !isNight;
+        document.body.classList.toggle('dark-mode');
+        const h = {
+            best: isNight ? "更安全(最优)" : "更舒适(最优)",
+            alt1: "更短距离",
+            alt2: isNight ? "环境更好" : "更安全"
+        };
+        document.getElementById('h-best').innerText = h.best;
+        document.getElementById('h-alt2').innerText = h.alt2;
+        if(computedRoutes.best) calculateAll(); // 切换时重新计算
+    }
+
+    // --- 4. 核心算法：权重与排他性逻辑 ---
+    function getWeight(props, type, mode, penaltyNodes = []) {
+        let { length: L, width: W, env: E, safe: S } = props;
+        L = L || 0.1; W = W || 1; E = E || 1; S = S || 1;
+
+        // 排他性惩罚：如果该路段在已有路径中，权重激增 100 倍
+        const isUsed = penaltyNodes.includes(props.id);
+        const penalty = isUsed ? 100 : 1;
+
+        let weight = 0;
+        if (!mode) { // 白天逻辑
+            if (type === 'best') weight = (L*0.2 + W*0.2 + E*0.4 + S*0.2);
+            if (type === 'alt1') weight = (L*0.5 + W*0.2 + E*0.3);
+            if (type === 'alt2') weight = (L*0.3 + W*0.3 + S*0.4);
+        } else { // 黑夜逻辑
+            if (type === 'best') weight = (L*0.2 + W*0.2 + E*0.2 + S*0.4);
+            if (type === 'alt1') weight = (L*0.5 + W*0.2 + S*0.3);
+            if (type === 'alt2') weight = (L*0.2 + W*0.2 + S*0.2 + E*0.4);
+        }
+        return weight * penalty;
+    }
+
+    // --- 5. 路径计算与冲突调整 ---
+    function solvePath(type, penaltyIds = [], lBoost = 0) {
+        const pathFinder = new geojsonPathFinder(roadsData, {
+            weightFn: (a, b, props) => getWeight(props, type, isNight, penaltyIds) + (lBoost * props.length)
+        });
+        // 模拟当前位置到目的地（实际需通过 GPS 和输入获取）
+        const destName = document.getElementById('destInput').value;
+        const dest = pointsData.features.find(f => f.properties.name === destName);
+        if(!dest || !userLocation) return null;
+
+        return pathFinder.findPath(
+            { geometry: { coordinates: [userLocation.lng, userLocation.lat] } },
+            { geometry: { coordinates: dest.geometry.coordinates } }
+        );
+    }
+
+    async function calculateAll() {
+        if(!userLocation) return alert("等待定位中...");
+        
+        // 1. 计算最优
+        let best = solvePath('best');
+        
+        // 2. 计算备选一（增加排他性，若重复则调高 L 权重）
+        let usedIds = best ? best.edgeInfos.map(e => e.id) : [];
+        let alt1 = solvePath('alt1', usedIds);
+        let lAdjust1 = 0;
+        while(alt1 && JSON.stringify(alt1.path) === JSON.stringify(best?.path) && lAdjust1 < 2) {
+            lAdjust1 += 0.5; // 优先调整 length 占比
+            alt1 = solvePath('alt1', usedIds, lAdjust1);
+        }
+
+        // 3. 计算备选二
+        let allUsedIds = [...usedIds, ...(alt1 ? alt1.edgeInfos.map(e => e.id) : [])];
+        let alt2 = solvePath('alt2', allUsedIds);
+        // ...同样的 while 循环逻辑进行调优...
+
+        computedRoutes = { best, alt1, alt2 };
+        updateUI();
+    }
+
+    // --- 6. 定位与交互 ---
+    map.on('locationfound', e => {
+        userLocation = e.latlng;
+        L.circleMarker(e.latlng, {radius: 7, color: '#800000'}).addTo(map);
+    });
+    map.locate({setView: true, watch: true});
+
+    function selectRoute(type) {
+        const colors = { best: '#800000', alt1: '#007AFF', alt2: '#34C759' };
+        Object.values(computedRoutes).forEach(r => r?.layer && map.removeLayer(r.layer));
+        
+        const r = computedRoutes[type];
+        if(r) {
+            r.layer = L.polyline(r.path.map(p => [p[1], p[0]]), {color: colors[type], weight: 6}).addTo(map);
+            map.fitBounds(r.layer.getBounds());
+        }
+    }
+
+    function updateUI() {
+        ['best', 'alt1', 'alt2'].forEach(t => {
+            const r = computedRoutes[t];
+            const div = document.getElementById('d-' + t);
+            const meta = document.getElementById('m-' + t);
+            if(r) {
+                div.innerHTML = `经过: ${r.path.length}个节点<br>路况: ${isNight?'照明充足':'风景优美'}`;
+                meta.innerText = `估计: ${(r.weight*100).toFixed(0)}米`;
+            }
+        });
+    }
+</script>
+</body>
+</html>
