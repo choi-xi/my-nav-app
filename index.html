@@ -16,8 +16,26 @@
         #map.shrink { height: 60vh; }
         #map.mini-shrink { height: 92vh; }
 
-        /* UI 控件 */
-        .top-ui { position: absolute; top: 15px; width: 92%; left: 4%; z-index: 2000; display: flex; flex-direction: column; gap: 10px; }
+        /* 新增：具有设计感的顶部标题 */
+        .brand-header {
+            position: absolute; top: 0; left: 0; width: 100%; height: 50px;
+            background: linear-gradient(to bottom, rgba(255,255,255,0.95), rgba(255,255,255,0.7));
+            backdrop-filter: blur(10px); z-index: 2005;
+            display: flex; align-items: center; justify-content: center;
+            border-bottom: 1px solid rgba(128,0,0,0.1);
+        }
+        .dark-mode .brand-header {
+            background: linear-gradient(to bottom, rgba(15,15,20,0.95), rgba(15,15,20,0.7));
+            border-bottom-color: rgba(255,255,255,0.05);
+        }
+        .brand-title {
+            color: var(--accent); font-size: 18px; font-weight: 800; letter-spacing: 2px;
+            display: flex; align-items: center; gap: 8px;
+        }
+        .brand-title::before, .brand-title::after { content: ""; width: 15px; height: 2px; background: var(--accent); opacity: 0.3; }
+
+        /* UI 控件位置下移以避开标题 */
+        .top-ui { position: absolute; top: 60px; width: 92%; left: 4%; z-index: 2000; display: flex; flex-direction: column; gap: 10px; }
         .search-row { display: flex; gap: 8px; }
         .input-group { flex: 1; display: flex; background: #fff; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.15); overflow: hidden; height: 46px; }
         .dark-mode .input-group { background: #2a2a2e; border: 1px solid #3a3a40; }
@@ -27,7 +45,6 @@
         .icon-btn { width: 46px; height: 46px; border-radius: 12px; border: none; background: #fff; cursor: pointer; font-size: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.15); display: flex; align-items: center; justify-content: center; transition: 0.2s; }
         .dark-mode .icon-btn { background: #2a2a2e; color: #fff; border: 1px solid #3a3a40; }
 
-        /* 底部面板 */
         .bottom-nav { position: fixed; bottom: 0; width: 100%; height: 40vh; background: var(--panel); transform: translateY(100%); transition: all 0.4s ease; z-index: 2001; border-radius: 20px 20px 0 0; box-shadow: 0 -5px 25px rgba(0,0,0,0.2); }
         .bottom-nav.show { transform: translateY(0); }
         .bottom-nav.collapsed { height: 65px; transform: translateY(0); }
@@ -36,34 +53,22 @@
         .route-tabs { flex: 1; display: flex; overflow-x: auto; scrollbar-width: none; }
         .tab { flex: 1; padding: 20px 10px; text-align: center; cursor: pointer; font-weight: bold; font-size: 14px; opacity: 0.4; white-space: nowrap; }
         .tab.active { opacity: 1; color: var(--accent); border-bottom: 3px solid var(--accent); }
-        .dark-mode .tab.active { color: #ff4d4d; border-bottom-color: #ff4d4d; }
 
         .fold-btn { background: var(--accent); border: none; font-size: 11px; cursor: pointer; padding: 6px 14px; border-radius: 20px; color: #fff; font-weight: bold; }
         .route-detail { padding: 20px; overflow-y: auto; height: calc(40vh - 65px); }
         
-        #status-bar { position: absolute; top: 75px; left: 5%; z-index: 1500; font-size: 12px; background: rgba(0,0,0,0.85); color: white; padding: 6px 12px; border-radius: 6px; pointer-events: none; border: 1px solid rgba(255,255,255,0.1); }
+        #status-bar { position: absolute; top: 115px; left: 5%; z-index: 1500; font-size: 12px; background: rgba(0,0,0,0.85); color: white; padding: 6px 12px; border-radius: 6px; pointer-events: none; border: 1px solid rgba(255,255,255,0.1); }
         
-        /* 动态标注样式 */
-        .poi-label {
-            background: transparent !important;
-            border: none !important;
-            box-shadow: none !important;
-            font-weight: bold;
-            color: var(--accent);
-            text-shadow: 1px 1px 2px white, -1px -1px 2px white, 0 0 5px white;
-            font-size: 13px;
-            pointer-events: none;
-        }
-        .dark-mode .poi-label {
-            color: #ffbaba;
-            text-shadow: 1px 1px 2px black, -1px -1px 2px black, 0 0 5px black;
-        }
-
+        .poi-label { background: transparent !important; border: none !important; box-shadow: none !important; font-weight: bold; color: var(--accent); text-shadow: 1px 1px 2px white, -1px -1px 2px white, 0 0 5px white; font-size: 13px; pointer-events: none; }
+        .dark-mode .poi-label { color: #ffbaba; text-shadow: 1px 1px 2px black, -1px -1px 2px black, 0 0 5px black; }
         .poi-popup-btn { background: var(--accent); color: white; border: none; padding: 8px 12px; border-radius: 8px; cursor: pointer; font-weight: bold; margin-top: 8px; width: 100%; font-size: 14px; }
-        .dark-mode .poi-popup-btn { background: #a30000; }
     </style>
 </head>
 <body>
+
+<div class="brand-header">
+    <div class="brand-title">深圳大学人行导航</div>
+</div>
 
 <div class="top-ui">
     <div class="search-row">
@@ -97,23 +102,35 @@
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
-const DEG_TO_METER = 111000;
+// 修正：使用 Haversine 公式计算精确距离
+function getHaversineDistance(coords1, coords2) {
+    const R = 6371e3; // 地球半径（米）
+    const φ1 = coords1[1] * Math.PI / 180;
+    const φ2 = coords2[1] * Math.PI / 180;
+    const Δφ = (coords2[1] - coords1[1]) * Math.PI / 180;
+    const Δλ = (coords2[0] - coords1[0]) * Math.PI / 180;
+    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+              Math.cos(φ1) * Math.cos(φ2) *
+              Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+}
 
-/** 1. 权重路径规划引擎 **/
 class PathEngine {
     constructor(geojson) {
         this.graph = new Map();
         geojson.features.forEach(f => {
             const coords = f.geometry.coordinates;
             for (let i = 0; i < coords.length - 1; i++) {
-                this.addEdge(coords[i].join(','), coords[i+1].join(','), f.properties);
+                this.addEdge(coords[i], coords[i+1], f.properties);
             }
         });
     }
-    addEdge(p1, p2, p) {
+    addEdge(c1, c2, p) {
+        const p1 = c1.join(','), p2 = c2.join(',');
         if (!this.graph.has(p1)) this.graph.set(p1, []);
         if (!this.graph.has(p2)) this.graph.set(p2, []);
-        const dist = Math.sqrt(Math.pow(p1.split(',')[0]-p2.split(',')[0], 2) + Math.pow(p1.split(',')[1]-p2.split(',')[1], 2)) * DEG_TO_METER;
+        const dist = getHaversineDistance(c1, c2); // 使用精确距离
         const edge = { to: p2, l: dist, w: p.Width||3, e: p.Environment||3, s: p.Safety||3, penalty: 0 };
         this.graph.get(p1).push(edge);
         this.graph.get(p2).push({...edge, to: p1});
@@ -138,6 +155,7 @@ class PathEngine {
             pq.sort((a,b) => a.d - b.d);
             const {n:u} = pq.shift();
             if (u === t) break;
+            if(!this.graph.get(u)) continue;
             for (let e of this.graph.get(u)) {
                 let cost = weightFn(e) + e.penalty;
                 if (dists[u] + cost < dists[e.to]) {
@@ -158,7 +176,6 @@ class PathEngine {
     }
 }
 
-/** 2. 话术库 **/
 const DescriptionLib = {
     get(label, isDark) {
         const p = isDark ? {
@@ -174,7 +191,6 @@ const DescriptionLib = {
     }
 };
 
-/** 3. 地图逻辑 **/
 const map = L.map('map', { zoomControl: false, attributionControl: false }).setView([22.532, 113.936], 16);
 let engine, pointsData, userLocation, isDark = false, routes = [], activePolyline = null, layers = {};
 let pointsLayer, uM = null, isLocked = false;
@@ -191,7 +207,6 @@ async function init() {
         layers.water = L.geoJSON(w).addTo(map);
         layers.buildings = L.geoJSON(b).addTo(map);
         layers.roads = L.geoJSON(r).addTo(map);
-        
         engine = new PathEngine(r);
         pointsData = p;
 
@@ -207,7 +222,6 @@ async function init() {
                 const n = f.properties.name;
                 const coords = f.geometry.coordinates;
                 const o = document.createElement('option'); o.value = n; document.getElementById('pointsList').appendChild(o);
-                
                 l.on('click', (e) => {
                     L.DomEvent.stopPropagation(e);
                     let popupContent = `<div style="text-align:center"><b>${n}</b><br>`;
@@ -215,7 +229,7 @@ async function init() {
                     popupContent += `<button class="poi-popup-btn" style="background:#444" onclick="startNav('${n}')">设为目的地</button></div>`;
                     l.bindPopup(popupContent).openPopup();
                 });
-                
+                // 初始缩放状态检查
                 if(map.getZoom() < 17) l.closeTooltip();
             }
         }).addTo(map);
@@ -224,9 +238,14 @@ async function init() {
     } catch (e) { console.error("数据加载失败:", e); }
 }
 
-// 动态点样式
+// 修正：优化点的大小随缩放变化的逻辑
 function getPointStyle(zoom) {
-    const radius = Math.max(3, (zoom - 13) * 2.5);
+    let radius = 3;
+    if (zoom >= 18) radius = 6;
+    else if (zoom === 17) radius = 4.5;
+    else if (zoom === 16) radius = 3;
+    else radius = 1.5; // 对应第二张图：更小时点变得更小
+
     return {
         radius: radius,
         fillColor: "#800000",
@@ -237,10 +256,8 @@ function getPointStyle(zoom) {
     };
 }
 
-// 新增：动态道路样式计算
 function getRoadStyle(zoom, feature) {
     const baseWidth = feature.properties.Width || 3;
-    // 缩放系数：缩小(15以下)变细，放大(17以上)变粗
     let scaleFactor = 1;
     if (zoom <= 14) scaleFactor = 0.4;
     else if (zoom === 15) scaleFactor = 0.6;
@@ -255,18 +272,17 @@ function getRoadStyle(zoom, feature) {
     };
 }
 
-// 缩放监听
+// 修正：缩放监听器的控制逻辑
 map.on('zoomend', () => {
     const z = map.getZoom();
-    
-    // 1. 更新点与标注
     pointsLayer.eachLayer(layer => {
         layer.setStyle(getPointStyle(z));
+        // 修正：对应第一张图，缩小到一定程度强制关闭文字信息
         if (z >= 17) layer.openTooltip(); else layer.closeTooltip();
+        // 极小缩放时隐藏点
         if (z < 14) layer.setStyle({opacity:0, fillOpacity:0}); else layer.setStyle({opacity:1, fillOpacity:1});
     });
 
-    // 2. 更新道路粗细
     if (layers.roads) {
         layers.roads.eachLayer(layer => {
             layer.setStyle(getRoadStyle(z, layer.feature));
@@ -384,10 +400,8 @@ function updateThemeStyles() {
         buildings: { fillColor: "#e8e8e8", color: "#777777", weight: 2.5, fillOpacity: 0.8 }
     };
     
-    // 更新面层
     Object.keys(s).forEach(k => { if(layers[k]) layers[k].setStyle(s[k]); });
     
-    // 更新道路层（根据新主题颜色和当前缩放）
     if (layers.roads) {
         layers.roads.eachLayer(layer => {
             layer.setStyle(getRoadStyle(z, layer.feature));
