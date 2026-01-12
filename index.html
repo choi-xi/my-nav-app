@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>深大智能导航人行导航设计——暗影军团制</title>
+    <title>深大智能导航 - 全动态视觉版</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         :root { --accent: #800000; --bg: #f4f4f7; --text: #333; --panel: rgba(255,255,255,0.98); }
@@ -16,7 +16,6 @@
         #map.shrink { height: 60vh; }
         #map.mini-shrink { height: 92vh; }
 
-        /* 新增：具有设计感的顶部标题 */
         .brand-header {
             position: absolute; top: 0; left: 0; width: 100%; height: 50px;
             background: linear-gradient(to bottom, rgba(255,255,255,0.95), rgba(255,255,255,0.7));
@@ -32,9 +31,7 @@
             color: var(--accent); font-size: 18px; font-weight: 800; letter-spacing: 2px;
             display: flex; align-items: center; gap: 8px;
         }
-        .brand-title::before, .brand-title::after { content: ""; width: 15px; height: 2px; background: var(--accent); opacity: 0.3; }
 
-        /* UI 控件位置下移以避开标题 */
         .top-ui { position: absolute; top: 60px; width: 92%; left: 4%; z-index: 2000; display: flex; flex-direction: column; gap: 10px; }
         .search-row { display: flex; gap: 8px; }
         .input-group { flex: 1; display: flex; background: #fff; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.15); overflow: hidden; height: 46px; }
@@ -57,7 +54,7 @@
         .fold-btn { background: var(--accent); border: none; font-size: 11px; cursor: pointer; padding: 6px 14px; border-radius: 20px; color: #fff; font-weight: bold; }
         .route-detail { padding: 20px; overflow-y: auto; height: calc(40vh - 65px); }
         
-        #status-bar { position: absolute; top: 115px; left: 5%; z-index: 1500; font-size: 12px; background: rgba(0,0,0,0.85); color: white; padding: 6px 12px; border-radius: 6px; pointer-events: none; border: 1px solid rgba(255,255,255,0.1); }
+        #status-bar { position: absolute; top: 115px; left: 5%; z-index: 1500; font-size: 12px; background: rgba(0,0,0,0.85); color: white; padding: 6px 12px; border-radius: 6px; pointer-events: none; border: 1px solid rgba(255,255,255,0.1); transition: 0.3s; }
         
         .poi-label { background: transparent !important; border: none !important; box-shadow: none !important; font-weight: bold; color: var(--accent); text-shadow: 1px 1px 2px white, -1px -1px 2px white, 0 0 5px white; font-size: 13px; pointer-events: none; }
         .dark-mode .poi-label { color: #ffbaba; text-shadow: 1px 1px 2px black, -1px -1px 2px black, 0 0 5px black; }
@@ -78,13 +75,14 @@
         </div>
         <datalist id="pointsList"></datalist>
         <div class="side-controls">
+            <button class="icon-btn" onclick="getLocation()" title="获取当前位置">🛰️</button>
             <button class="icon-btn" onclick="toggleTheme()" id="themeBtn">☀️</button>
             <button class="icon-btn" onclick="resetMap()" title="清除并解锁起点">🔄</button>
         </div>
     </div>
 </div>
 
-<div id="status-bar">就绪：点击 POI 标记或地图设置起点</div>
+<div id="status-bar">就绪：点击 POI 或按钮设置起点</div>
 <div id="map"></div>
 
 <div class="bottom-nav" id="bottomNav">
@@ -102,18 +100,15 @@
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
-// 修正：使用 Haversine 公式计算精确距离
+// --- 精确距离算法 ---
 function getHaversineDistance(coords1, coords2) {
-    const R = 6371e3; // 地球半径（米）
+    const R = 6371e3;
     const φ1 = coords1[1] * Math.PI / 180;
     const φ2 = coords2[1] * Math.PI / 180;
     const Δφ = (coords2[1] - coords1[1]) * Math.PI / 180;
     const Δλ = (coords2[0] - coords1[0]) * Math.PI / 180;
-    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-              Math.cos(φ1) * Math.cos(φ2) *
-              Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
+    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 class PathEngine {
@@ -130,7 +125,7 @@ class PathEngine {
         const p1 = c1.join(','), p2 = c2.join(',');
         if (!this.graph.has(p1)) this.graph.set(p1, []);
         if (!this.graph.has(p2)) this.graph.set(p2, []);
-        const dist = getHaversineDistance(c1, c2); // 使用精确距离
+        const dist = getHaversineDistance(c1, c2);
         const edge = { to: p2, l: dist, w: p.Width||3, e: p.Environment||3, s: p.Safety||3, penalty: 0 };
         this.graph.get(p1).push(edge);
         this.graph.get(p2).push({...edge, to: p1});
@@ -179,21 +174,53 @@ class PathEngine {
 const DescriptionLib = {
     get(label, isDark) {
         const p = isDark ? {
-            "更安全": ["沿途路灯明亮，监控全覆盖，夜间行走首选。", "主路宽阔，视野无死角。"],
-            "更短": ["赶课/归宿最快路径，物理距离最短。", "节省体力的最高效路线。"],
-            "环境更好": ["晚风习习，穿过校内核心亮化区。", "避开人流，享受静谧校园夜景。"]
+            "更安全": ["沿途路灯明亮，夜间行走首选。", "主路宽阔，视野无死角。"],
+            "更短": ["归宿最快路径，物理距离最短。", "节省体力的最高效路线。"],
+            "环境更好": ["晚风习习，享受静谧校园夜景。"]
         } : {
             "更舒适": ["植被繁茂，树荫遮蔽，午后步行首选。", "景观路段比例高，适合慢步。"],
             "更短": ["物理距离最短，赶课必备。", "直达目的地，不绕冤枉路。"],
-            "更安全": ["主要道路通行，避开窄道施工区域。", "人流量适中，路面平坦。"]
+            "更安全": ["主要道路通行，路面平坦。"]
         };
         return (p[label] || ["智能推荐路线"])[Math.floor(Math.random() * (p[label]?.length || 1))];
     }
 };
 
-const map = L.map('map', { zoomControl: false, attributionControl: false }).setView([22.532, 113.936], 16);
+const map = L.map('map', { zoomControl: false, attributionControl: false }).setView([22.532, 113.936], 17);
 let engine, pointsData, userLocation, isDark = false, routes = [], activePolyline = null, layers = {};
 let pointsLayer, uM = null, isLocked = false;
+
+// --- 定位功能函数 ---
+function getLocation() {
+    const status = document.getElementById('status-bar');
+    if (!navigator.geolocation) {
+        alert("您的浏览器不支持定位功能");
+        return;
+    }
+    status.innerText = "🛰️ 正在采集手机位置...";
+    status.style.background = "#800000";
+
+    navigator.geolocation.getCurrentPosition(
+        (position) => {
+            const lat = position.coords.latitude;
+            const lng = position.coords.longitude;
+            // 设置为起点
+            setAsStart([lng, lat]);
+            map.flyTo([lat, lng], 18);
+            status.innerText = "📍 已成功定位当前位置";
+            status.style.background = "rgba(0,100,0,0.85)";
+            setTimeout(() => { 
+                status.style.background = "rgba(0,0,0,0.85)";
+            }, 3000);
+        },
+        (error) => {
+            status.innerText = "❌ 定位失败，请手动设置";
+            status.style.background = "#555";
+            alert("无法获取位置，请检查是否开启 GPS 或授权定位权限。");
+        },
+        { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+    );
+}
 
 async function init() {
     try {
@@ -211,101 +238,55 @@ async function init() {
         pointsData = p;
 
         pointsLayer = L.geoJSON(p, {
-            pointToLayer: (f, l) => {
-                const marker = L.circleMarker(l, getPointStyle(map.getZoom()));
-                marker.bindTooltip(f.properties.name, {
-                    permanent: true, direction: 'right', className: 'poi-label', offset: [12, 0]
-                });
-                return marker;
-            },
+            pointToLayer: (f, l) => L.circleMarker(l, getPointStyle(map.getZoom())),
             onEachFeature: (f, l) => {
-                const n = f.properties.name;
-                const coords = f.geometry.coordinates;
-                const o = document.createElement('option'); o.value = n; document.getElementById('pointsList').appendChild(o);
+                const n = f.properties.name, coords = f.geometry.coordinates;
+                l.bindTooltip(n, { permanent: true, direction: 'right', className: 'poi-label', offset: [12, 0] });
+                document.getElementById('pointsList').appendChild(new Option(n, n));
                 l.on('click', (e) => {
                     L.DomEvent.stopPropagation(e);
-                    let popupContent = `<div style="text-align:center"><b>${n}</b><br>`;
-                    if (!isLocked) popupContent += `<button class="poi-popup-btn" onclick="setAsStart([${coords[0]}, ${coords[1]}])">设为起点</button>`;
-                    popupContent += `<button class="poi-popup-btn" style="background:#444" onclick="startNav('${n}')">设为目的地</button></div>`;
-                    l.bindPopup(popupContent).openPopup();
+                    let pop = `<div style="text-align:center"><b>${n}</b><br>`;
+                    if (!isLocked) pop += `<button class="poi-popup-btn" onclick="setAsStart([${coords[0]}, ${coords[1]}])">设为起点</button>`;
+                    pop += `<button class="poi-popup-btn" style="background:#444" onclick="startNav('${n}')">设为目的地</button></div>`;
+                    l.bindPopup(pop).openPopup();
                 });
-                // 初始缩放状态检查
                 if(map.getZoom() < 17) l.closeTooltip();
             }
         }).addTo(map);
-
         updateThemeStyles();
-    } catch (e) { console.error("数据加载失败:", e); }
+    } catch (e) { console.error("数据加载失败", e); }
 }
 
-// 修正：优化点的大小随缩放变化的逻辑
 function getPointStyle(zoom) {
-    let radius = 3;
-    if (zoom >= 18) radius = 6;
-    else if (zoom === 17) radius = 4.5;
-    else if (zoom === 16) radius = 3;
-    else radius = 1.5; // 对应第二张图：更小时点变得更小
-
-    return {
-        radius: radius,
-        fillColor: "#800000",
-        color: "#fff",
-        weight: zoom > 16 ? 2 : 1,
-        fillOpacity: 1,
-        opacity: 1
-    };
+    let radius = zoom >= 18 ? 6 : (zoom === 17 ? 4.5 : (zoom === 16 ? 3 : 1.5));
+    return { radius, fillColor: "#800000", color: "#fff", weight: zoom > 16 ? 2 : 1, fillOpacity: 1 };
 }
 
-function getRoadStyle(zoom, feature) {
-    const baseWidth = feature.properties.Width || 3;
-    let scaleFactor = 1;
-    if (zoom <= 14) scaleFactor = 0.4;
-    else if (zoom === 15) scaleFactor = 0.6;
-    else if (zoom === 16) scaleFactor = 1;
-    else if (zoom === 17) scaleFactor = 1.5;
-    else if (zoom >= 18) scaleFactor = 2.2;
-
-    return {
-        color: isDark ? "#6e6e7e" : "#ffffff",
-        weight: baseWidth * scaleFactor,
-        opacity: zoom < 15 ? 0.5 : 1
-    };
-}
-
-// 修正：缩放监听器的控制逻辑
 map.on('zoomend', () => {
     const z = map.getZoom();
-    pointsLayer.eachLayer(layer => {
-        layer.setStyle(getPointStyle(z));
-        // 修正：对应第一张图，缩小到一定程度强制关闭文字信息
-        if (z >= 17) layer.openTooltip(); else layer.closeTooltip();
-        // 极小缩放时隐藏点
-        if (z < 14) layer.setStyle({opacity:0, fillOpacity:0}); else layer.setStyle({opacity:1, fillOpacity:1});
+    pointsLayer.eachLayer(l => {
+        l.setStyle(getPointStyle(z));
+        z >= 17 ? l.openTooltip() : l.closeTooltip();
     });
-
-    if (layers.roads) {
-        layers.roads.eachLayer(layer => {
-            layer.setStyle(getRoadStyle(z, layer.feature));
-        });
-    }
+    if (layers.roads) layers.roads.eachLayer(l => {
+        const bw = l.feature.properties.Width || 3;
+        const sf = z <= 14 ? 0.4 : (z === 15 ? 0.6 : (z === 16 ? 1 : (z === 17 ? 1.5 : 2.2)));
+        l.setStyle({ weight: bw * sf });
+    });
 });
 
 function setAsStart(coords) {
     userLocation = coords;
     const latlng = L.latLng(coords[1], coords[0]);
-    if (!uM) {
-        uM = L.circleMarker(latlng, { radius: 10, fillColor: '#007AFF', color: '#fff', weight: 3, fillOpacity: 1, zIndexOffset: 2000 }).addTo(map);
-    } else uM.setLatLng(latlng);
+    if (!uM) uM = L.circleMarker(latlng, { radius: 10, fillColor: '#007AFF', color: '#fff', weight: 3, fillOpacity: 1, zIndexOffset: 2000 }).addTo(map);
+    else uM.setLatLng(latlng);
     uM.bringToFront();
     isLocked = true;
     map.closePopup();
     document.getElementById('status-bar').innerText = "📍 起点已固定，搜索目的地即可";
 }
 
-map.on('click', e => {
-    if (isLocked) return;
-    setAsStart([e.latlng.lng, e.latlng.lat]);
-});
+map.on('click', e => { if (!isLocked) setAsStart([e.latlng.lng, e.latlng.lat]); });
 
 function resetMap() {
     isLocked = false; userLocation = null;
@@ -331,7 +312,6 @@ function startNav(name) {
     map.closePopup();
     engine.resetPenalties();
     routes = [];
-
     const configs = isDark ? 
         [{l:"更短", w:e=>e.l}, {l:"更安全", w:e=>e.l*0.2+(10-e.s)*0.8}, {l:"环境更好", w:e=>e.l*0.3+(10-e.e)*0.7}] :
         [{l:"更短", w:e=>e.l}, {l:"更舒适", w:e=>e.l*0.2+(10-e.e)*0.8}, {l:"更安全", w:e=>e.l*0.4+(10-e.s)*0.6}];
@@ -343,7 +323,6 @@ function startNav(name) {
             routes.push({ label: cfg.l, path: res.coords, dist: res.distance });
         }
     });
-
     updatePointStyles(name);
     renderUI(name);
 }
@@ -389,7 +368,6 @@ function toggleTheme() {
 }
 
 function updateThemeStyles() {
-    const z = map.getZoom();
     const s = isDark ? {
         green: { fillColor: "#0f1a11", color: "#1b3320", weight: 1, fillOpacity: 0.8 },
         water: { fillColor: "#08121c", color: "#1a3d5f", weight: 1, fillOpacity: 0.9 },
@@ -399,14 +377,7 @@ function updateThemeStyles() {
         water: { fillColor: "#a2d2ff", color: "#5fa8d3", weight: 1, fillOpacity: 0.8 },
         buildings: { fillColor: "#e8e8e8", color: "#777777", weight: 2.5, fillOpacity: 0.8 }
     };
-    
     Object.keys(s).forEach(k => { if(layers[k]) layers[k].setStyle(s[k]); });
-    
-    if (layers.roads) {
-        layers.roads.eachLayer(layer => {
-            layer.setStyle(getRoadStyle(z, layer.feature));
-        });
-    }
 }
 
 function toggleFold() {
@@ -420,4 +391,3 @@ init();
 </script>
 </body>
 </html>
-
