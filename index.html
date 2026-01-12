@@ -3,15 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>深大智能导航 - 纯净权重版</title>
+    <title>深大智能导航 - 视觉增强版</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         :root { --accent: #800000; --bg: #f4f4f7; --text: #333; --panel: rgba(255,255,255,0.98); }
-        .dark-mode { --bg: #1a1a1c; --text: #e0e0e0; --panel: rgba(40,40,42,0.98); }
+        .dark-mode { --bg: #0a0a0c; --text: #e0e0e0; --panel: rgba(30,30,35,0.98); }
         
         body { margin: 0; background: var(--bg); color: var(--text); font-family: -apple-system, sans-serif; overflow: hidden; transition: 0.3s; }
         #map { height: 100vh; width: 100vw; transition: height 0.4s ease; background: #ddd; }
-        .dark-mode #map { background: #0f0f12; }
+        .dark-mode #map { background: #050508; } /* 更深的底图背景，衬托建筑 */
         
         #map.shrink { height: 60vh; }
         #map.mini-shrink { height: 92vh; }
@@ -19,12 +19,12 @@
         .top-ui { position: absolute; top: 15px; width: 92%; left: 4%; z-index: 2000; display: flex; flex-direction: column; gap: 10px; }
         .search-row { display: flex; gap: 8px; }
         .input-group { flex: 1; display: flex; background: #fff; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.15); overflow: hidden; height: 46px; }
-        .dark-mode .input-group { background: #333; border: 1px solid #444; }
+        .dark-mode .input-group { background: #2a2a2e; border: 1px solid #3a3a40; }
         #destInput { flex: 1; padding: 0 16px; border: none; font-size: 16px; outline: none; background: transparent; color: inherit; }
         
         .side-controls { display: flex; flex-direction: column; gap: 8px; }
         .icon-btn { width: 46px; height: 46px; border-radius: 12px; border: none; background: #fff; cursor: pointer; font-size: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.15); display: flex; align-items: center; justify-content: center; }
-        .dark-mode .icon-btn { background: #333; color: #fff; border: 1px solid #444; }
+        .dark-mode .icon-btn { background: #2a2a2e; color: #fff; border: 1px solid #3a3a40; }
 
         .bottom-nav { position: fixed; bottom: 0; width: 100%; height: 40vh; background: var(--panel); transform: translateY(100%); transition: all 0.4s ease; z-index: 2001; border-radius: 20px 20px 0 0; box-shadow: 0 -5px 25px rgba(0,0,0,0.2); }
         .bottom-nav.show { transform: translateY(0); }
@@ -34,13 +34,15 @@
         .route-tabs { flex: 1; display: flex; overflow-x: auto; scrollbar-width: none; }
         .tab { flex: 1; padding: 20px 10px; text-align: center; cursor: pointer; font-weight: bold; font-size: 14px; opacity: 0.4; white-space: nowrap; }
         .tab.active { opacity: 1; color: var(--accent); border-bottom: 3px solid var(--accent); }
+        .dark-mode .tab.active { color: #ff4d4d; border-bottom-color: #ff4d4d; }
 
         .fold-btn { background: var(--accent); border: none; font-size: 11px; cursor: pointer; padding: 6px 14px; border-radius: 20px; color: #fff; font-weight: bold; }
         .route-detail { padding: 20px; overflow-y: auto; height: calc(40vh - 65px); }
         
-        #status-bar { position: absolute; top: 75px; left: 5%; z-index: 1500; font-size: 12px; background: rgba(0,0,0,0.8); color: white; padding: 6px 12px; border-radius: 6px; pointer-events: none; }
+        #status-bar { position: absolute; top: 75px; left: 5%; z-index: 1500; font-size: 12px; background: rgba(0,0,0,0.85); color: white; padding: 6px 12px; border-radius: 6px; pointer-events: none; }
         
         .poi-popup-btn { background: var(--accent); color: white; border: none; padding: 8px 12px; border-radius: 8px; cursor: pointer; font-weight: bold; margin-top: 8px; width: 100%; font-size: 14px; }
+        .dark-mode .poi-popup-btn { background: #a30000; }
     </style>
 </head>
 <body>
@@ -141,7 +143,7 @@ const DescriptionLib = {
     get(label, isDark) {
         const p = isDark ? {
             "更安全": ["沿途路灯明亮，监控全覆盖，夜间行走首选。", "主干道路宽阔，视野无死角。", "避开了偏僻小径，夜间非常稳健。"],
-            "更短": ["赶课/归宿最快路径，分秒必争。", "物理长度最短，拒绝绕路。", "避开冗余弯道，节省体力。"],
+            "更短": ["赶课最快路径，分秒必争。", "物理长度最短，拒绝绕路。", "避开冗余弯道，节省体力。"],
             "环境更好": ["晚风习习，穿过校内核心亮化区。", "避开人流，享受静谧校园夜景。", "空气清新，沿途景观层次丰富。"]
         } : {
             "更舒适": ["植被繁茂，树荫遮蔽，午后步行首选。", "景观路段比例高，适合慢步穿行。", "路面平坦宽健，行走体验极佳。"],
@@ -231,18 +233,9 @@ function startNav(name) {
     engine.resetPenalties();
     routes = [];
 
-    // --- 修改权重逻辑 ---
     const configs = isDark ? 
-        [
-            {l:"更短", w:e=>e.l * 1.0}, // 纯长度权重
-            {l:"更安全", w:e=>e.l*0.2+(10-e.s)*0.8}, 
-            {l:"环境更好", w:e=>e.l*0.3+(10-e.e)*0.7}
-        ] :
-        [
-            {l:"更短", w:e=>e.l * 1.0}, // 纯长度权重
-            {l:"更舒适", w:e=>e.l*0.2+(10-e.e)*0.8}, 
-            {l:"更安全", w:e=>e.l*0.4+(10-e.s)*0.6}
-        ];
+        [{l:"更短", w:e=>e.l*1.0}, {l:"更安全", w:e=>e.l*0.2+(10-e.s)*0.8}, {l:"环境更好", w:e=>e.l*0.3+(10-e.e)*0.7}] :
+        [{l:"更短", w:e=>e.l*1.0}, {l:"更舒适", w:e=>e.l*0.2+(10-e.e)*0.8}, {l:"更安全", w:e=>e.l*0.4+(10-e.s)*0.6}];
 
     configs.forEach((cfg, idx) => {
         let res = engine.findPath(userLocation, dest, cfg.w);
@@ -270,7 +263,7 @@ function renderUI(name) {
 function switchRoute(idx) {
     if (activePolyline) map.removeLayer(activePolyline);
     const r = routes[idx];
-    activePolyline = L.polyline(r.path.map(p => [p[1], p[0]]), { color: idx===0?'#800000':'#666', weight: 8, opacity: 0.9, lineCap: 'round' }).addTo(map);
+    activePolyline = L.polyline(r.path.map(p => [p[1], p[0]]), { color: idx===0?(isDark?'#ff4d4d':'#800000'):'#666', weight: 8, opacity: 0.9, lineCap: 'round' }).addTo(map);
     document.querySelectorAll('.tab').forEach((t, i) => t.className = i===idx ? 'tab active' : 'tab');
     const m = Math.round(r.dist);
     document.getElementById('routeTag').innerText = idx === 0 ? "最佳方案" : "备选方案 " + idx;
@@ -295,13 +288,14 @@ function toggleTheme() {
 
 function updateThemeStyles() {
     const s = isDark ? {
-        green: { fillColor: "#16261a", color: "#1e3d26", weight: 1.5, fillOpacity: 0.8 },
-        water: { fillColor: "#0d1b2a", color: "#1b4d5f", weight: 1.5, fillOpacity: 0.9 },
-        buildings: { fillColor: "#2d2d35", color: "#5a5a65", weight: 2, fillOpacity: 0.9 },
-        roads: { color: "#666677", weight: 5, opacity: 0.8 }
+        green: { fillColor: "#0f1a11", color: "#1b3320", weight: 1, fillOpacity: 0.8 },
+        water: { fillColor: "#08121c", color: "#1a3d5f", weight: 1, fillOpacity: 0.9 },
+        // 关键修复：建筑物增加明亮的描边和更有质感的填充
+        buildings: { fillColor: "#3a3a45", color: "#8a8a9a", weight: 2.5, fillOpacity: 0.95 }, 
+        roads: { color: "#6e6e7e", weight: 5, opacity: 0.8 } 
     } : {
-        green: { fillColor: "#b8d8ba", color: "#7ba37d", weight: 1.5, fillOpacity: 0.7 },
-        water: { fillColor: "#a2d2ff", color: "#5fa8d3", weight: 1.5, fillOpacity: 0.8 },
+        green: { fillColor: "#b8d8ba", color: "#7ba37d", weight: 1, fillOpacity: 0.7 },
+        water: { fillColor: "#a2d2ff", color: "#5fa8d3", weight: 1, fillOpacity: 0.8 },
         buildings: { fillColor: "#e8e8e8", color: "#777777", weight: 2.5, fillOpacity: 0.8 },
         roads: { color: "#ffffff", weight: 5, opacity: 1 }
     };
