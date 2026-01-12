@@ -3,20 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>深大智能导航 - 终极整合版</title>
+    <title>深大智能导航 - 纯净权重版</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         :root { --accent: #800000; --bg: #f4f4f7; --text: #333; --panel: rgba(255,255,255,0.98); }
-        .dark-mode { --bg: #121212; --text: #e0e0e0; --panel: rgba(35,35,35,0.98); }
+        .dark-mode { --bg: #1a1a1c; --text: #e0e0e0; --panel: rgba(40,40,42,0.98); }
         
         body { margin: 0; background: var(--bg); color: var(--text); font-family: -apple-system, sans-serif; overflow: hidden; transition: 0.3s; }
         #map { height: 100vh; width: 100vw; transition: height 0.4s ease; background: #ddd; }
-        .dark-mode #map { background: #1a1a1a; }
+        .dark-mode #map { background: #0f0f12; }
         
         #map.shrink { height: 60vh; }
         #map.mini-shrink { height: 92vh; }
 
-        /* UI 控件 */
         .top-ui { position: absolute; top: 15px; width: 92%; left: 4%; z-index: 2000; display: flex; flex-direction: column; gap: 10px; }
         .search-row { display: flex; gap: 8px; }
         .input-group { flex: 1; display: flex; background: #fff; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.15); overflow: hidden; height: 46px; }
@@ -24,10 +23,9 @@
         #destInput { flex: 1; padding: 0 16px; border: none; font-size: 16px; outline: none; background: transparent; color: inherit; }
         
         .side-controls { display: flex; flex-direction: column; gap: 8px; }
-        .icon-btn { width: 46px; height: 46px; border-radius: 12px; border: none; background: #fff; cursor: pointer; font-size: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.15); display: flex; align-items: center; justify-content: center; transition: 0.2s; }
+        .icon-btn { width: 46px; height: 46px; border-radius: 12px; border: none; background: #fff; cursor: pointer; font-size: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.15); display: flex; align-items: center; justify-content: center; }
         .dark-mode .icon-btn { background: #333; color: #fff; border: 1px solid #444; }
 
-        /* 底部面板 */
         .bottom-nav { position: fixed; bottom: 0; width: 100%; height: 40vh; background: var(--panel); transform: translateY(100%); transition: all 0.4s ease; z-index: 2001; border-radius: 20px 20px 0 0; box-shadow: 0 -5px 25px rgba(0,0,0,0.2); }
         .bottom-nav.show { transform: translateY(0); }
         .bottom-nav.collapsed { height: 65px; transform: translateY(0); }
@@ -36,13 +34,13 @@
         .route-tabs { flex: 1; display: flex; overflow-x: auto; scrollbar-width: none; }
         .tab { flex: 1; padding: 20px 10px; text-align: center; cursor: pointer; font-weight: bold; font-size: 14px; opacity: 0.4; white-space: nowrap; }
         .tab.active { opacity: 1; color: var(--accent); border-bottom: 3px solid var(--accent); }
-        .dark-mode .tab.active { color: #ff4d4d; border-bottom-color: #ff4d4d; }
 
         .fold-btn { background: var(--accent); border: none; font-size: 11px; cursor: pointer; padding: 6px 14px; border-radius: 20px; color: #fff; font-weight: bold; }
         .route-detail { padding: 20px; overflow-y: auto; height: calc(40vh - 65px); }
-        .collapsed .route-detail { display: none; }
         
-        #status-bar { position: absolute; top: 75px; left: 5%; z-index: 1500; font-size: 12px; background: rgba(0,0,0,0.75); color: white; padding: 6px 12px; border-radius: 6px; backdrop-filter: blur(4px); pointer-events: none; }
+        #status-bar { position: absolute; top: 75px; left: 5%; z-index: 1500; font-size: 12px; background: rgba(0,0,0,0.8); color: white; padding: 6px 12px; border-radius: 6px; pointer-events: none; }
+        
+        .poi-popup-btn { background: var(--accent); color: white; border: none; padding: 8px 12px; border-radius: 8px; cursor: pointer; font-weight: bold; margin-top: 8px; width: 100%; font-size: 14px; }
     </style>
 </head>
 <body>
@@ -61,7 +59,7 @@
     </div>
 </div>
 
-<div id="status-bar">就绪：点击地图设置起点</div>
+<div id="status-bar">就绪：点击地图或 POI 设为起点</div>
 <div id="map"></div>
 
 <div class="bottom-nav" id="bottomNav">
@@ -81,7 +79,6 @@
 <script>
 const DEG_TO_METER = 111000;
 
-/** 1. 权重路径规划引擎 **/
 class PathEngine {
     constructor(geojson) {
         this.graph = new Map();
@@ -112,6 +109,7 @@ class PathEngine {
             return n;
         };
         const s = findN(startPt), t = findN(endPt);
+        if (!s || !t) return null;
         let dists = {}, prev = {}, pq = [{n: s, d: 0}];
         for (let k of this.graph.keys()) dists[k] = Infinity;
         dists[s] = 0;
@@ -139,24 +137,21 @@ class PathEngine {
     }
 }
 
-/** 2. 随机话术描述库 **/
 const DescriptionLib = {
     get(label, isDark) {
         const p = isDark ? {
             "更安全": ["沿途路灯明亮，监控全覆盖，夜间行走首选。", "主干道路宽阔，视野无死角。", "避开了偏僻小径，夜间非常稳健。"],
-            "更短": ["赶课/归宿最快路径，分秒必争。", "直线距离最优，主打高效直达。", "避开冗余弯道，节省体力。"],
+            "更短": ["赶课/归宿最快路径，分秒必争。", "物理长度最短，拒绝绕路。", "避开冗余弯道，节省体力。"],
             "环境更好": ["晚风习习，穿过校内核心亮化区。", "避开人流，享受静谧校园夜景。", "空气清新，沿途景观层次丰富。"]
         } : {
             "更舒适": ["植被繁茂，树荫遮蔽，午后步行首选。", "景观路段比例高，适合慢步穿行。", "路面平坦宽健，行走体验极佳。"],
-            "更短": ["物理距离最短，拒绝绕路。", "赶课首选，路径效率经过严密计算。", "最快速度抵达目的地。"],
+            "更短": ["最短物理距离，主打高效直达。", "最短赶课路径，效率最高。", "最快速度抵达目的地。"],
             "更安全": ["主要道路通行，视野开阔。", "避开施工与窄道，行走更顺畅。", "人流量适中，环境稳固。"]
         };
-        const pool = p[label] || ["智能算法推荐方案。"];
-        return pool[Math.floor(Math.random() * pool.length)];
+        return p[label][Math.floor(Math.random() * p[label].length)];
     }
 };
 
-/** 3. 地图主逻辑 **/
 const map = L.map('map', { zoomControl: false, attributionControl: false }).setView([22.532, 113.936], 16);
 let engine, pointsData, userLocation, isDark = false, routes = [], activePolyline = null, layers = {};
 let pointsLayer, uM = null, isLocked = false;
@@ -168,54 +163,57 @@ async function init() {
             fetch('buildings.json').then(r => r.json()), fetch('roads.json').then(r => r.json()),
             fetch('points.json').then(r => r.json())
         ]);
-        
         layers.green = L.geoJSON(g).addTo(map);
         layers.water = L.geoJSON(w).addTo(map);
         layers.buildings = L.geoJSON(b).addTo(map);
         layers.roads = L.geoJSON(r).addTo(map);
-        
         engine = new PathEngine(r);
         pointsData = p;
 
         pointsLayer = L.geoJSON(p, {
-            pointToLayer: (f, l) => L.circleMarker(l, { radius: 6, weight: 2, fillOpacity: 1 }),
+            pointToLayer: (f, l) => L.circleMarker(l, { radius: 7, weight: 2, fillOpacity: 1, color: '#fff', fillColor: '#800000' }),
             onEachFeature: (f, l) => {
                 const n = f.properties.name;
+                const coords = f.geometry.coordinates;
                 const o = document.createElement('option'); o.value = n; document.getElementById('pointsList').appendChild(o);
-                l.on('click', (e) => { L.DomEvent.stopPropagation(e); startNav(n); });
+                l.on('click', (e) => {
+                    L.DomEvent.stopPropagation(e);
+                    let popupContent = `<div style="text-align:center"><b>${n}</b><br>`;
+                    if (!isLocked) popupContent += `<button class="poi-popup-btn" onclick="setAsStart([${coords[0]}, ${coords[1]}])">设为起点</button>`;
+                    popupContent += `<button class="poi-popup-btn" style="background:#444" onclick="startNav('${n}')">设为目的地</button></div>`;
+                    l.bindPopup(popupContent).openPopup();
+                });
             }
         }).addTo(map);
-
         updateThemeStyles();
     } catch (e) { console.error(e); }
 }
 
-// 起点锁定逻辑
-map.on('click', e => {
-    if (isLocked) {
-        document.getElementById('status-bar').innerText = "⚠️ 起点已锁定，请先点 🔄 重置";
-        return;
-    }
-    userLocation = [e.latlng.lng, e.latlng.lat];
+function setAsStart(coords) {
+    userLocation = coords;
+    const latlng = L.latLng(coords[1], coords[0]);
     if (!uM) {
-        uM = L.circleMarker(e.latlng, { radius: 9, fillColor: '#007AFF', color: '#fff', weight: 3, fillOpacity: 1, zIndexOffset: 2000 }).addTo(map);
-    } else {
-        uM.setLatLng(e.latlng);
-    }
+        uM = L.circleMarker(latlng, { radius: 10, fillColor: '#007AFF', color: '#fff', weight: 3, fillOpacity: 1, zIndexOffset: 2000 }).addTo(map);
+    } else uM.setLatLng(latlng);
     uM.bringToFront();
     isLocked = true;
+    map.closePopup();
     document.getElementById('status-bar').innerText = "📍 起点已固定，搜索目的地即可";
+}
+
+map.on('click', e => {
+    if (isLocked) return;
+    setAsStart([e.latlng.lng, e.latlng.lat]);
 });
 
 function resetMap() {
-    isLocked = false;
-    userLocation = null;
+    isLocked = false; userLocation = null;
     if (uM) { map.removeLayer(uM); uM = null; }
     if (activePolyline) { map.removeLayer(activePolyline); activePolyline = null; }
     document.getElementById('destInput').value = "";
     document.getElementById('bottomNav').classList.remove('show');
     document.getElementById('map').className = "";
-    updatePointStyles(); // 恢复所有点
+    updatePointStyles();
     document.getElementById('status-bar').innerText = "✨ 已解锁，可重新设置起点";
 }
 
@@ -226,28 +224,33 @@ function triggerNav() {
 }
 
 function startNav(name) {
-    if (!userLocation) return alert("请在地图上点击选择起点");
+    if (!userLocation) return alert("请先设置起点");
     const target = pointsData.features.find(f => f.properties.name === name);
     const dest = target.geometry.coordinates;
-    
+    map.closePopup();
     engine.resetPenalties();
     routes = [];
-    
-    // 权重配置：根据日夜不同自动切换
-    const configs = isDark ? 
-        [{l:"更安全", w:e=>e.l*0.2+(10-e.s)*0.8}, {l:"更短", w:e=>e.l*0.9}, {l:"环境更好", w:e=>e.l*0.3+(10-e.e)*0.7}] :
-        [{l:"更舒适", w:e=>e.l*0.2+(10-e.e)*0.8}, {l:"更短", w:e=>e.l*0.9}, {l:"更安全", w:e=>e.l*0.4+(10-e.s)*0.6}];
 
-    // 循环计算路径，并带入惩罚项去重
+    // --- 修改权重逻辑 ---
+    const configs = isDark ? 
+        [
+            {l:"更短", w:e=>e.l * 1.0}, // 纯长度权重
+            {l:"更安全", w:e=>e.l*0.2+(10-e.s)*0.8}, 
+            {l:"环境更好", w:e=>e.l*0.3+(10-e.e)*0.7}
+        ] :
+        [
+            {l:"更短", w:e=>e.l * 1.0}, // 纯长度权重
+            {l:"更舒适", w:e=>e.l*0.2+(10-e.e)*0.8}, 
+            {l:"更安全", w:e=>e.l*0.4+(10-e.s)*0.6}
+        ];
+
     configs.forEach((cfg, idx) => {
         let res = engine.findPath(userLocation, dest, cfg.w);
-        // 如果是第一条路，给路段加权，确保第二条路不重合
-        if (idx === 0) res.edgesUsed.forEach(e => e.penalty += 200);
-        routes.push({ label: cfg.l, path: res.coords, dist: res.distance });
+        if (res && idx === 0) res.edgesUsed.forEach(e => e.penalty += 200);
+        if (res) routes.push({ label: cfg.l, path: res.coords, dist: res.distance });
     });
 
-    updatePointStyles(name); // 聚焦模式
-    if(uM) uM.bringToFront();
+    updatePointStyles(name);
     renderUI(name);
 }
 
@@ -267,32 +270,19 @@ function renderUI(name) {
 function switchRoute(idx) {
     if (activePolyline) map.removeLayer(activePolyline);
     const r = routes[idx];
-    activePolyline = L.polyline(r.path.map(p => [p[1], p[0]]), { color: idx===0?'#800000':'#666', weight: 8, opacity: 0.9, lineCap: 'round', zIndexOffset: 1000 }).addTo(map);
+    activePolyline = L.polyline(r.path.map(p => [p[1], p[0]]), { color: idx===0?'#800000':'#666', weight: 8, opacity: 0.9, lineCap: 'round' }).addTo(map);
     document.querySelectorAll('.tab').forEach((t, i) => t.className = i===idx ? 'tab active' : 'tab');
     const m = Math.round(r.dist);
     document.getElementById('routeTag').innerText = idx === 0 ? "最佳方案" : "备选方案 " + idx;
-    document.getElementById('routeDesc').innerHTML = `
-        全程约 <b>${m}</b> 米 | 预计步行 <b>${Math.ceil(m/75)}</b> 分钟<br>
-        <span style="color:var(--accent); font-weight:bold;">💡 评价：</span>${DescriptionLib.get(r.label, isDark)}
-    `;
+    document.getElementById('routeDesc').innerHTML = `全程 <b>${m}</b> 米 | 预计步行 <b>${Math.ceil(m/75)}</b> 分钟<br>💡 ${DescriptionLib.get(r.label, isDark)}`;
     map.fitBounds(activePolyline.getBounds(), { padding: [40, 40] });
     if(uM) uM.bringToFront();
 }
 
 function updatePointStyles(targetName = null) {
     pointsLayer.eachLayer(layer => {
-        if (!targetName) {
-            layer.setStyle({ opacity: 1, fillOpacity: 1, radius: 6, color: "#fff", fillColor: "#800000" });
-        } else {
-            const isTarget = layer.feature.properties.name === targetName;
-            layer.setStyle({
-                opacity: isTarget ? 1 : 0.05,
-                fillOpacity: isTarget ? 1 : 0.05,
-                radius: isTarget ? 10 : 4,
-                fillColor: isTarget ? "#800000" : "#999"
-            });
-            if(isTarget) layer.bringToFront();
-        }
+        const isTarget = layer.feature.properties.name === targetName;
+        layer.setStyle({ opacity: targetName?(isTarget?1:0.05):1, fillOpacity: targetName?(isTarget?1:0.05):1, radius: isTarget?11:7 });
     });
 }
 
@@ -305,15 +295,15 @@ function toggleTheme() {
 
 function updateThemeStyles() {
     const s = isDark ? {
-        green: { fillColor: "#1b3322", color: "#2d5a27", weight: 0.5, fillOpacity: 0.7 },
-        water: { fillColor: "#0e2a35", color: "#1a4d5f", weight: 0.5, fillOpacity: 0.8 },
-        buildings: { fillColor: "#2a2a2a", color: "#3d3d3d", weight: 0.8, fillOpacity: 0.9 },
-        roads: { color: "#444", weight: 3, opacity: 0.6 }
+        green: { fillColor: "#16261a", color: "#1e3d26", weight: 1.5, fillOpacity: 0.8 },
+        water: { fillColor: "#0d1b2a", color: "#1b4d5f", weight: 1.5, fillOpacity: 0.9 },
+        buildings: { fillColor: "#2d2d35", color: "#5a5a65", weight: 2, fillOpacity: 0.9 },
+        roads: { color: "#666677", weight: 5, opacity: 0.8 }
     } : {
-        green: { fillColor: "#C8E6C9", color: "#A5D6A7", weight: 0.5, fillOpacity: 0.7 },
-        water: { fillColor: "#B3E5FC", color: "#81D4FA", weight: 0.5, fillOpacity: 0.8 },
-        buildings: { fillColor: "#E0E0E0", color: "#BDBDBD", weight: 0.5, fillOpacity: 0.8 },
-        roads: { color: "#ffffff", weight: 3, opacity: 0.7 }
+        green: { fillColor: "#b8d8ba", color: "#7ba37d", weight: 1.5, fillOpacity: 0.7 },
+        water: { fillColor: "#a2d2ff", color: "#5fa8d3", weight: 1.5, fillOpacity: 0.8 },
+        buildings: { fillColor: "#e8e8e8", color: "#777777", weight: 2.5, fillOpacity: 0.8 },
+        roads: { color: "#ffffff", weight: 5, opacity: 1 }
     };
     Object.keys(s).forEach(k => { if(layers[k]) layers[k].setStyle(s[k]); });
 }
