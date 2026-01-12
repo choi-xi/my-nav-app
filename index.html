@@ -3,134 +3,135 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>深大智能导航 Pro</title>
+    <title>深大智能导航 - 交互增强版</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        :root { --accent: #800000; --bg: #f4f4f7; --text: #333; --panel: rgba(255,255,255,0.95); }
-        .dark-mode { --bg: #1a1a1a; --text: #eee; --panel: rgba(40,40,40,0.95); }
+        :root { --accent: #800000; --bg: #f4f4f7; --text: #333; --panel: rgba(255,255,255,0.98); }
+        .dark-mode { --bg: #1a1a1a; --text: #eee; --panel: rgba(45,45,45,0.98); }
         
         body { margin: 0; background: var(--bg); color: var(--text); font-family: -apple-system, sans-serif; overflow: hidden; transition: background 0.5s ease; }
-        #map { height: 100vh; width: 100vw; transition: height 0.4s cubic-bezier(0.4, 0, 0.2, 1); background: #ccc; }
-        #map.shrink { height: 55vh; }
+        #map { height: 100vh; width: 100vw; transition: height 0.4s cubic-bezier(0.4, 0, 0.2, 1); background: #ddd; }
+        #map.shrink { height: 60vh; }
+        #map.mini-shrink { height: 90vh; }
 
-        /* 顶部 UI */
+        /* 顶部 UI 布局优化 */
         .top-ui { position: absolute; top: 15px; width: 92%; left: 4%; z-index: 1000; display: flex; flex-direction: column; gap: 10px; }
-        .search-row { display: flex; gap: 8px; }
-        #destInput { flex: 1; padding: 12px 16px; border-radius: 12px; border: none; box-shadow: 0 4px 15px rgba(0,0,0,0.1); font-size: 16px; outline: none; }
-        .mode-toggle { padding: 10px; border-radius: 12px; border: none; background: var(--panel); cursor: pointer; font-size: 18px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
-
-        /* 底部路径面板 */
-        .bottom-nav { position: fixed; bottom: 0; width: 100%; height: 45vh; background: var(--panel); transform: translateY(100%); transition: transform 0.4s ease; z-index: 1001; display: flex; flex-direction: column; }
-        .bottom-nav.show { transform: translateY(0); }
-        .route-tabs { display: flex; border-bottom: 1px solid #ddd; }
-        .tab { flex: 1; padding: 15px 5px; text-align: center; cursor: pointer; font-weight: bold; font-size: 14px; opacity: 0.6; }
-        .tab.active { opacity: 1; border-bottom: 3px solid var(--accent); color: var(--accent); }
-        .route-detail { padding: 20px; overflow-y: auto; flex: 1; }
-
-        /* 动画提示 */
-        .leaflet-popup-content-wrapper { border-radius: 12px; padding: 5px; }
-        .nav-btn-mini { background: var(--accent); color: white; border: none; padding: 8px 15px; border-radius: 6px; margin-top: 8px; width: 100%; cursor: pointer; }
+        .search-row { display: flex; gap: 6px; align-items: stretch; }
+        .input-group { flex: 1; display: flex; background: #fff; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); overflow: hidden; }
+        #destInput { flex: 1; padding: 12px 16px; border: none; font-size: 16px; outline: none; background: transparent; }
         
-        #status-bar { position: absolute; top: 120px; left: 5%; z-index: 1000; font-size: 11px; background: rgba(0,0,0,0.6); color: white; padding: 4px 10px; border-radius: 4px; }
+        /* 搜索框旁的导航按键 */
+        .nav-trigger-btn { padding: 0 15px; border: none; background: transparent; cursor: pointer; font-size: 18px; color: var(--accent); border-left: 1px solid #eee; display: flex; align-items: center; justify-content: center; }
+        .nav-trigger-btn:active { background: #f0f0f0; }
+
+        .mode-toggle { width: 46px; height: 46px; border-radius: 12px; border: none; background: #fff; cursor: pointer; font-size: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); display: flex; align-items: center; justify-content: center; }
+
+        /* 底部导航面板 */
+        .bottom-nav { position: fixed; bottom: 0; width: 100%; height: 40vh; background: var(--panel); transform: translateY(100%); transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1); z-index: 1001; border-radius: 20px 20px 0 0; box-shadow: 0 -5px 20px rgba(0,0,0,0.1); }
+        .bottom-nav.show { transform: translateY(0); }
+        .bottom-nav.collapsed { height: 65px; transform: translateY(0); }
+
+        .nav-header { display: flex; align-items: center; border-bottom: 1px solid rgba(0,0,0,0.08); padding-right: 15px; }
+        .route-tabs { flex: 1; display: flex; padding: 0 5px; }
+        .tab { flex: 1; padding: 20px 5px; text-align: center; cursor: pointer; font-weight: bold; font-size: 14px; opacity: 0.4; transition: 0.3s; white-space: nowrap; }
+        .tab.active { opacity: 1; color: var(--accent); border-bottom: 3px solid var(--accent); }
+
+        .fold-btn { background: #f0f0f0; border: none; font-size: 12px; cursor: pointer; padding: 6px 12px; border-radius: 20px; color: var(--text); font-weight: bold; }
+        .dark-mode .fold-btn { background: #333; }
+
+        .route-detail { padding: 20px; overflow-y: auto; height: calc(40vh - 65px); transition: opacity 0.3s; }
+        .collapsed .route-detail { opacity: 0; pointer-events: none; }
+        
+        #status-bar { position: absolute; top: 75px; left: 5%; z-index: 1000; font-size: 11px; background: rgba(0,0,0,0.7); color: white; padding: 4px 12px; border-radius: 4px; pointer-events: none; }
     </style>
 </head>
 <body>
 
 <div class="top-ui">
     <div class="search-row">
-        <input type="text" id="destInput" list="pointsList" placeholder="搜索校内地点..." oninput="handleSearch(this.value)">
+        <div class="input-group">
+            <input type="text" id="destInput" list="pointsList" placeholder="输入目的地并按回车..." onkeydown="checkEnter(event)">
+            <button class="nav-trigger-btn" onclick="triggerNav()" title="开始导航">🚀</button>
+        </div>
         <datalist id="pointsList"></datalist>
         <button class="mode-toggle" onclick="toggleTheme()" id="themeBtn">☀️</button>
     </div>
 </div>
 
-<div id="status-bar">正在加载校区资源...</div>
+<div id="status-bar">定位中...</div>
 <div id="map"></div>
 
 <div class="bottom-nav" id="bottomNav">
-    <div class="route-tabs">
-        <div class="tab active" onclick="switchRoute(0)" id="tab0">最优路径</div>
-        <div class="tab" onclick="switchRoute(1)" id="tab1">备选一</div>
-        <div class="tab" onclick="switchRoute(2)" id="tab2">备选二</div>
+    <div class="nav-header">
+        <div class="route-tabs" id="tabContainer"></div>
+        <button class="fold-btn" onclick="toggleFold()" id="foldBtn">收起</button>
     </div>
     <div class="route-detail" id="routeDetail">
-        <h3 id="targetTitle" style="margin-top:0;">目的地</h3>
-        <p id="routeDesc">请选择一条路径查看详情</p>
+        <h3 id="targetTitle" style="margin:0 0 10px 0;">目的地</h3>
+        <p id="routeDesc"></p>
     </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
-/** 核心导航引擎：支持动态权重和路径去重 **/
-class SmartNavEngine {
+/** 导航核心引擎 **/
+class MultiWeightEngine {
     constructor(geojson) {
-        this.nodes = new Map();
+        this.graph = new Map();
         geojson.features.forEach(f => {
-            const coords = f.geometry.coordinates.map(c => [c[0], c[1]]);
-            const props = f.properties;
+            const coords = f.geometry.coordinates;
+            const p = f.properties;
             for (let i = 0; i < coords.length - 1; i++) {
-                this.addEdge(coords[i].join(','), coords[i+1].join(','), props);
+                this.addEdge(coords[i].join(','), coords[i+1].join(','), p);
             }
         });
     }
-
-    addEdge(p1, p2, props) {
-        if (!this.nodes.has(p1)) this.nodes.set(p1, []);
-        if (!this.nodes.has(p2)) this.nodes.set(p2, []);
-        const edge = {
-            to: p2,
-            length: this.calcDist(p1.split(','), p2.split(',')),
-            width: props.Width || 2,
-            env: props.Environment || 3,
-            safe: props.Safety || 3
-        };
-        this.nodes.get(p1).push(edge);
-        this.nodes.get(p2).push({...edge, to: p1});
+    addEdge(p1, p2, p) {
+        if (!this.graph.has(p1)) this.graph.set(p1, []);
+        if (!this.graph.has(p2)) this.graph.set(p2, []);
+        const c1 = p1.split(','), c2 = p2.split(',');
+        const dist = Math.sqrt(Math.pow(c1[0]-c2[0], 2) + Math.pow(c1[1]-c2[1], 2));
+        const edge = { to: p2, l: dist, w: p.Width||3, e: p.Environment||3, s: p.Safety||3 };
+        this.graph.get(p1).push(edge);
+        this.graph.get(p2).push({...edge, to: p1});
     }
-
-    calcDist(c1, c2) { return Math.sqrt(Math.pow(c1[0]-c2[0], 2) + Math.pow(c1[1]-c2[1], 2)); }
-
-    // Dijkstra 核心，支持传入权重函数
     findPath(startPt, endPt, weightFn) {
-        const findNearest = (pt) => {
-            let nearest = null, minD = Infinity;
-            for (let key of this.nodes.keys()) {
-                const k = key.split(',').map(Number);
-                const d = Math.pow(k[0]-pt[0], 2) + Math.pow(k[1]-pt[1], 2);
-                if (d < minD) { minD = d; nearest = key; }
+        const findN = (pt) => {
+            let n = null, min = Infinity;
+            for (let k of this.graph.keys()) {
+                const c = k.split(',').map(Number);
+                const d = Math.pow(c[0]-pt[0],2)+Math.pow(c[1]-pt[1],2);
+                if(d < min) { min = d; n = k; }
             }
-            return nearest;
+            return n;
         };
-
-        const start = findNearest(startPt), target = findNearest(endPt);
-        let dists = {}, prev = {}, pq = [{node: start, d: 0}];
-        for (let n of this.nodes.keys()) dists[n] = Infinity;
-        dists[start] = 0;
-
+        const s = findN(startPt), t = findN(endPt);
+        if(!s || !t) return [];
+        let dists = {}, prev = {}, pq = [{n: s, d: 0}];
+        for (let k of this.graph.keys()) dists[k] = Infinity;
+        dists[s] = 0;
         while (pq.length > 0) {
             pq.sort((a,b) => a.d - b.d);
-            const {node: u} = pq.shift();
-            if (u === target) break;
-            for (let edge of this.nodes.get(u)) {
-                let cost = weightFn(edge);
-                if (dists[u] + cost < dists[edge.to]) {
-                    dists[edge.to] = dists[u] + cost;
-                    prev[edge.to] = u;
-                    pq.push({node: edge.to, d: dists[edge.to]});
+            const {n:u} = pq.shift();
+            if (u === t) break;
+            for (let e of this.graph.get(u)) {
+                let cost = weightFn(e);
+                if (dists[u] + cost < dists[e.to]) {
+                    dists[e.to] = dists[u] + cost;
+                    prev[e.to] = u;
+                    pq.push({n: e.to, d: dists[e.to]});
                 }
             }
         }
         const path = [];
-        for (let at = target; at; at = prev[at]) path.push(at.split(',').map(Number));
+        for (let curr = t; curr; curr = prev[curr]) path.push(curr.split(',').map(Number));
         return path.reverse();
     }
 }
 
-// 初始化应用
-let isDark = false;
 const map = L.map('map', { zoomControl: false, attributionControl: false }).setView([22.532, 113.936], 16);
-let engine, pointsData, userLocation, routes = [], layers = [];
+let engine, pointsData, userLocation, isDark = false, routes = [], activePolyline = null, layers = {};
 
 async function init() {
     try {
@@ -141,112 +142,129 @@ async function init() {
             fetch('roads.json').then(res => res.json()),
             fetch('points.json').then(res => res.json())
         ]);
-
         layers.green = L.geoJSON(g, { style: { fillColor: "#C8E6C9", color: "#A5D6A7", weight: 0.5, fillOpacity: 0.7 } }).addTo(map);
         layers.water = L.geoJSON(w, { style: { fillColor: "#B3E5FC", color: "#81D4FA", weight: 0.5, fillOpacity: 0.8 } }).addTo(map);
         layers.buildings = L.geoJSON(b, { style: { fillColor: "#E0E0E0", color: "#BDBDBD", weight: 0.5, fillOpacity: 0.8 } }).addTo(map);
         layers.roads = L.geoJSON(r, { style: { color: "#ffffff", weight: 3, opacity: 0.7 } }).addTo(map);
-
-        engine = new SmartNavEngine(r);
+        engine = new MultiWeightEngine(r);
         pointsData = p;
-
         const list = document.getElementById('pointsList');
         L.geoJSON(p, {
             pointToLayer: (f, latlng) => L.circleMarker(latlng, { radius: 6, fillColor: "#800000", color: "#fff", weight: 2, fillOpacity: 1 }),
             onEachFeature: (f, layer) => {
-                const name = f.properties.name || "未命名地点";
+                const name = f.properties.name;
                 const opt = document.createElement('option'); opt.value = name; list.appendChild(opt);
-                layer.bindPopup(`<strong>${name}</strong><br><button class="nav-btn-mini" onclick="startNav('${name}')">到这去</button>`);
+                layer.on('click', () => startNav(name));
             }
         }).addTo(map);
-
-        document.getElementById('status-bar').innerText = "地图已就绪，点击路面设置起点";
-    } catch (e) { document.getElementById('status-bar').innerText = "加载失败"; }
+        document.getElementById('status-bar').innerText = "📍 请先点击地图设置起点";
+    } catch (e) { document.getElementById('status-bar').innerText = "❌ 加载失败"; }
 }
 
-// 主导航逻辑
+// 响应回车键
+function checkEnter(e) {
+    if (e.key === 'Enter') triggerNav();
+}
+
+// 触发导航
+function triggerNav() {
+    const val = document.getElementById('destInput').value;
+    const exists = pointsData.features.some(f => f.properties.name === val);
+    if (exists) {
+        startNav(val);
+        document.getElementById('destInput').blur(); // 隐藏手机键盘
+    } else if (val) {
+        alert("未找到该地点，请从列表中选择");
+    }
+}
+
 function startNav(targetName) {
     if (!userLocation) return alert("请先点击地图设置起点");
     const target = pointsData.features.find(f => f.properties.name === targetName);
-    const destCoords = target.geometry.coordinates;
+    const dest = target.geometry.coordinates;
     
-    routes = [];
+    // 权重策略
     const configs = isDark ? [
-        { name: "更安全 (最优)", w: {l:0.2, w:0.2, e:0.2, s:0.4} },
-        { name: "更短 (备选一)", w: {l:0.5, w:0.2, e:0.0, s:0.3} },
-        { name: "环境更好 (备选二)", w: {l:0.2, w:0.2, e:0.4, s:0.2} }
+        { label:"更安全(最优)", w: e => e.l*0.2 + (10-e.w)*0.2 + (10-e.e)*0.2 + (10-e.s)*0.4 },
+        { label:"更短(备选一)", w: e => e.l*0.5 + (10-e.w)*0.2 + (10-e.s)*0.3 },
+        { label:"环境更好(备选二)", w: e => e.l*0.2 + (10-e.w)*0.2 + (10-e.s)*0.2 + (10-e.e)*0.4 }
     ] : [
-        { name: "更舒适 (最优)", w: {l:0.2, w:0.2, e:0.4, s:0.2} },
-        { name: "更短 (备选一)", w: {l:0.5, w:0.2, e:0.3, s:0.0} },
-        { name: "更安全 (备选二)", w: {l:0.3, w:0.3, e:0.0, s:0.4} }
+        { label:"更舒适(最优)", w: e => e.l*0.2 + (10-e.w)*0.2 + (10-e.e)*0.4 + (10-e.s)*0.2 },
+        { label:"更短(备选一)", w: e => e.l*0.5 + (10-e.w)*0.2 + (10-e.e)*0.3 },
+        { label:"更安全(备选二)", w: e => e.l*0.3 + (10-e.w)*0.3 + (10-e.s)*0.4 }
     ];
 
+    routes = [];
     configs.forEach((cfg, idx) => {
-        let path = engine.findPath(userLocation, destCoords, e => (e.length*cfg.w.l + (10-e.width)*cfg.w.w + (10-e.env)*cfg.w.e + (10-e.safe)*cfg.w.s));
-        
-        // 去重逻辑：如果与之前路径重复，增加 length 权重
-        if (idx > 0 && JSON.stringify(path) === JSON.stringify(routes[0].path)) {
-            path = engine.findPath(userLocation, destCoords, e => (e.length*(cfg.w.l+0.3) + (10-e.width)*cfg.w.w));
+        let path = engine.findPath(userLocation, dest, cfg.w);
+        let pStr = JSON.stringify(path);
+        // 严格去重：如果备选路径与最优路径重合，则不添加
+        if (idx === 0 || !routes.some(r => r.pStr === pStr)) {
+            routes.push({ ...cfg, path, pStr });
         }
-        routes.push({ path, ...cfg });
     });
 
+    renderUI(targetName);
+}
+
+function renderUI(name) {
+    const container = document.getElementById('tabContainer');
+    container.innerHTML = "";
+    routes.forEach((r, i) => {
+        const div = document.createElement('div');
+        div.className = `tab ${i===0?'active':''}`;
+        div.innerText = r.label;
+        div.onclick = () => switchRoute(i);
+        container.appendChild(div);
+    });
+    document.getElementById('targetTitle').innerText = name;
+    document.getElementById('bottomNav').className = "bottom-nav show";
+    document.getElementById('map').className = "shrink";
+    document.getElementById('foldBtn').innerText = "收起内容";
     switchRoute(0);
-    document.getElementById('targetTitle').innerText = targetName;
-    document.getElementById('bottomNav').classList.add('show');
-    document.getElementById('map').classList.add('shrink');
 }
 
-let activeLayer = null;
 function switchRoute(idx) {
-    if (activeLayer) map.removeLayer(activeLayer);
+    if (activePolyline) map.removeLayer(activePolyline);
     const r = routes[idx];
-    activeLayer = L.polyline(r.path.map(p => [p[1], p[0]]), { color: idx===0?'#800000':'#555', weight: 8, opacity: 0.9 }).addTo(map);
-    
+    activePolyline = L.polyline(r.path.map(p => [p[1], p[0]]), { color: idx===0?'#800000':'#666', weight: 8, opacity: 0.9 }).addTo(map);
     document.querySelectorAll('.tab').forEach((t, i) => t.className = i===idx ? 'tab active' : 'tab');
-    document.getElementById('routeDesc').innerHTML = `
-        <strong>方案：${r.name}</strong><br>
-        预计步行距离：${Math.round(r.path.length * 10)} 米<br>
-        路段建议：此路径经由主要道路，安全系数高，适合${isDark?'夜间行走':'舒适步行'}。
-    `;
-    map.fitBounds(activeLayer.getBounds(), { padding: [30, 30] });
+    document.getElementById('routeDesc').innerText = `已选方案：${r.label}。全长约 ${Math.round(r.path.length * 11000)} 米。`;
+    map.fitBounds(activePolyline.getBounds(), { padding: [40, 40] }); // 自动缩放
 }
 
-// 界面交互
+function toggleFold() {
+    const nav = document.getElementById('bottomNav');
+    const mapEl = document.getElementById('map');
+    const isCollapsed = nav.classList.toggle('collapsed');
+    mapEl.className = isCollapsed ? "mini-shrink" : "shrink";
+    document.getElementById('foldBtn').innerText = isCollapsed ? "展开详情" : "收起内容";
+    setTimeout(() => map.invalidateSize(), 400);
+}
+
 function toggleTheme() {
     isDark = !isDark;
     document.body.classList.toggle('dark-mode');
     document.getElementById('themeBtn').innerText = isDark ? "🌙" : "☀️";
-    
-    const darkStyles = {
+    const s = isDark ? {
         green: { fillColor: "#1b3322", color: "#2d5a27" },
         water: { fillColor: "#0e2a35", color: "#1a4d5f" },
         buildings: { fillColor: "#333", color: "#444" },
-        roads: { color: "#555", opacity: 0.5 }
-    };
-    const lightStyles = {
+        roads: { color: "#444", opacity: 0.5 }
+    } : {
         green: { fillColor: "#C8E6C9", color: "#A5D6A7" },
         water: { fillColor: "#B3E5FC", color: "#81D4FA" },
         buildings: { fillColor: "#E0E0E0", color: "#BDBDBD" },
         roads: { color: "#ffffff", opacity: 0.7 }
     };
-    
-    const s = isDark ? darkStyles : lightStyles;
-    layers.green.setStyle(s.green);
-    layers.water.setStyle(s.water);
-    layers.buildings.setStyle(s.buildings);
-    layers.roads.setStyle(s.roads);
-}
-
-function handleSearch(val) {
-    if (pointsData.features.some(f => f.properties.name === val)) startNav(val);
+    Object.keys(s).forEach(k => layers[k].setStyle(s[k]));
 }
 
 map.on('click', e => {
     userLocation = [e.latlng.lng, e.latlng.lat];
     if (!window.uM) window.uM = L.circleMarker(e.latlng, { radius: 8, fillColor: '#007AFF', color: '#fff', weight: 3, fillOpacity: 1 }).addTo(map);
     else window.uM.setLatLng(e.latlng);
-    document.getElementById('status-bar').innerText = "起点已设，请输入终点";
+    document.getElementById('status-bar').innerText = "✅ 起点已就绪";
 });
 
 init();
