@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>深大智能导航 - 视觉增强版</title>
+    <title>深大智能导航 - 全动态视觉版</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         :root { --accent: #800000; --bg: #f4f4f7; --text: #333; --panel: rgba(255,255,255,0.98); }
@@ -11,11 +11,12 @@
         
         body { margin: 0; background: var(--bg); color: var(--text); font-family: -apple-system, sans-serif; overflow: hidden; transition: 0.3s; }
         #map { height: 100vh; width: 100vw; transition: height 0.4s ease; background: #ddd; }
-        .dark-mode #map { background: #050508; } /* 更深的底图背景，衬托建筑 */
+        .dark-mode #map { background: #050508; }
         
         #map.shrink { height: 60vh; }
         #map.mini-shrink { height: 92vh; }
 
+        /* UI 控件 */
         .top-ui { position: absolute; top: 15px; width: 92%; left: 4%; z-index: 2000; display: flex; flex-direction: column; gap: 10px; }
         .search-row { display: flex; gap: 8px; }
         .input-group { flex: 1; display: flex; background: #fff; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.15); overflow: hidden; height: 46px; }
@@ -23,9 +24,10 @@
         #destInput { flex: 1; padding: 0 16px; border: none; font-size: 16px; outline: none; background: transparent; color: inherit; }
         
         .side-controls { display: flex; flex-direction: column; gap: 8px; }
-        .icon-btn { width: 46px; height: 46px; border-radius: 12px; border: none; background: #fff; cursor: pointer; font-size: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.15); display: flex; align-items: center; justify-content: center; }
+        .icon-btn { width: 46px; height: 46px; border-radius: 12px; border: none; background: #fff; cursor: pointer; font-size: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.15); display: flex; align-items: center; justify-content: center; transition: 0.2s; }
         .dark-mode .icon-btn { background: #2a2a2e; color: #fff; border: 1px solid #3a3a40; }
 
+        /* 底部面板 */
         .bottom-nav { position: fixed; bottom: 0; width: 100%; height: 40vh; background: var(--panel); transform: translateY(100%); transition: all 0.4s ease; z-index: 2001; border-radius: 20px 20px 0 0; box-shadow: 0 -5px 25px rgba(0,0,0,0.2); }
         .bottom-nav.show { transform: translateY(0); }
         .bottom-nav.collapsed { height: 65px; transform: translateY(0); }
@@ -39,8 +41,24 @@
         .fold-btn { background: var(--accent); border: none; font-size: 11px; cursor: pointer; padding: 6px 14px; border-radius: 20px; color: #fff; font-weight: bold; }
         .route-detail { padding: 20px; overflow-y: auto; height: calc(40vh - 65px); }
         
-        #status-bar { position: absolute; top: 75px; left: 5%; z-index: 1500; font-size: 12px; background: rgba(0,0,0,0.85); color: white; padding: 6px 12px; border-radius: 6px; pointer-events: none; }
+        #status-bar { position: absolute; top: 75px; left: 5%; z-index: 1500; font-size: 12px; background: rgba(0,0,0,0.85); color: white; padding: 6px 12px; border-radius: 6px; pointer-events: none; border: 1px solid rgba(255,255,255,0.1); }
         
+        /* 动态标注样式 */
+        .poi-label {
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+            font-weight: bold;
+            color: var(--accent);
+            text-shadow: 1px 1px 2px white, -1px -1px 2px white, 0 0 5px white;
+            font-size: 13px;
+            pointer-events: none;
+        }
+        .dark-mode .poi-label {
+            color: #ffbaba;
+            text-shadow: 1px 1px 2px black, -1px -1px 2px black, 0 0 5px black;
+        }
+
         .poi-popup-btn { background: var(--accent); color: white; border: none; padding: 8px 12px; border-radius: 8px; cursor: pointer; font-weight: bold; margin-top: 8px; width: 100%; font-size: 14px; }
         .dark-mode .poi-popup-btn { background: #a30000; }
     </style>
@@ -61,7 +79,7 @@
     </div>
 </div>
 
-<div id="status-bar">就绪：点击地图或 POI 设为起点</div>
+<div id="status-bar">就绪：点击 POI 标记或地图设置起点</div>
 <div id="map"></div>
 
 <div class="bottom-nav" id="bottomNav">
@@ -81,6 +99,7 @@
 <script>
 const DEG_TO_METER = 111000;
 
+/** 1. 权重路径规划引擎 **/
 class PathEngine {
     constructor(geojson) {
         this.graph = new Map();
@@ -139,21 +158,23 @@ class PathEngine {
     }
 }
 
+/** 2. 话术库 **/
 const DescriptionLib = {
     get(label, isDark) {
         const p = isDark ? {
-            "更安全": ["沿途路灯明亮，监控全覆盖，夜间行走首选。", "主干道路宽阔，视野无死角。", "避开了偏僻小径，夜间非常稳健。"],
-            "更短": ["赶课最快路径，分秒必争。", "物理长度最短，拒绝绕路。", "避开冗余弯道，节省体力。"],
-            "环境更好": ["晚风习习，穿过校内核心亮化区。", "避开人流，享受静谧校园夜景。", "空气清新，沿途景观层次丰富。"]
+            "更安全": ["沿途路灯明亮，监控全覆盖，夜间行走首选。", "主路宽阔，视野无死角。"],
+            "更短": ["赶课/归宿最快路径，物理距离最短。", "节省体力的最高效路线。"],
+            "环境更好": ["晚风习习，穿过校内核心亮化区。", "避开人流，享受静谧校园夜景。"]
         } : {
-            "更舒适": ["植被繁茂，树荫遮蔽，午后步行首选。", "景观路段比例高，适合慢步穿行。", "路面平坦宽健，行走体验极佳。"],
-            "更短": ["最短物理距离，主打高效直达。", "最短赶课路径，效率最高。", "最快速度抵达目的地。"],
-            "更安全": ["主要道路通行，视野开阔。", "避开施工与窄道，行走更顺畅。", "人流量适中，环境稳固。"]
+            "更舒适": ["植被繁茂，树荫遮蔽，午后步行首选。", "景观路段比例高，适合慢步。"],
+            "更短": ["物理距离最短，赶课必备。", "直达目的地，不绕冤枉路。"],
+            "更安全": ["主要道路通行，避开窄道施工区域。", "人流量适中，路面平坦。"]
         };
-        return p[label][Math.floor(Math.random() * p[label].length)];
+        return (p[label] || ["智能推荐路线"])[Math.floor(Math.random() * (p[label]?.length || 1))];
     }
 };
 
+/** 3. 地图逻辑 **/
 const map = L.map('map', { zoomControl: false, attributionControl: false }).setView([22.532, 113.936], 16);
 let engine, pointsData, userLocation, isDark = false, routes = [], activePolyline = null, layers = {};
 let pointsLayer, uM = null, isLocked = false;
@@ -165,19 +186,28 @@ async function init() {
             fetch('buildings.json').then(r => r.json()), fetch('roads.json').then(r => r.json()),
             fetch('points.json').then(r => r.json())
         ]);
+        
         layers.green = L.geoJSON(g).addTo(map);
         layers.water = L.geoJSON(w).addTo(map);
         layers.buildings = L.geoJSON(b).addTo(map);
         layers.roads = L.geoJSON(r).addTo(map);
+        
         engine = new PathEngine(r);
         pointsData = p;
 
         pointsLayer = L.geoJSON(p, {
-            pointToLayer: (f, l) => L.circleMarker(l, { radius: 7, weight: 2, fillOpacity: 1, color: '#fff', fillColor: '#800000' }),
+            pointToLayer: (f, l) => {
+                const marker = L.circleMarker(l, getPointStyle(map.getZoom()));
+                marker.bindTooltip(f.properties.name, {
+                    permanent: true, direction: 'right', className: 'poi-label', offset: [12, 0]
+                });
+                return marker;
+            },
             onEachFeature: (f, l) => {
                 const n = f.properties.name;
                 const coords = f.geometry.coordinates;
                 const o = document.createElement('option'); o.value = n; document.getElementById('pointsList').appendChild(o);
+                
                 l.on('click', (e) => {
                     L.DomEvent.stopPropagation(e);
                     let popupContent = `<div style="text-align:center"><b>${n}</b><br>`;
@@ -185,11 +215,64 @@ async function init() {
                     popupContent += `<button class="poi-popup-btn" style="background:#444" onclick="startNav('${n}')">设为目的地</button></div>`;
                     l.bindPopup(popupContent).openPopup();
                 });
+                
+                if(map.getZoom() < 17) l.closeTooltip();
             }
         }).addTo(map);
+
         updateThemeStyles();
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error("数据加载失败:", e); }
 }
+
+// 动态点样式
+function getPointStyle(zoom) {
+    const radius = Math.max(3, (zoom - 13) * 2.5);
+    return {
+        radius: radius,
+        fillColor: "#800000",
+        color: "#fff",
+        weight: zoom > 16 ? 2 : 1,
+        fillOpacity: 1,
+        opacity: 1
+    };
+}
+
+// 新增：动态道路样式计算
+function getRoadStyle(zoom, feature) {
+    const baseWidth = feature.properties.Width || 3;
+    // 缩放系数：缩小(15以下)变细，放大(17以上)变粗
+    let scaleFactor = 1;
+    if (zoom <= 14) scaleFactor = 0.4;
+    else if (zoom === 15) scaleFactor = 0.6;
+    else if (zoom === 16) scaleFactor = 1;
+    else if (zoom === 17) scaleFactor = 1.5;
+    else if (zoom >= 18) scaleFactor = 2.2;
+
+    return {
+        color: isDark ? "#6e6e7e" : "#ffffff",
+        weight: baseWidth * scaleFactor,
+        opacity: zoom < 15 ? 0.5 : 1
+    };
+}
+
+// 缩放监听
+map.on('zoomend', () => {
+    const z = map.getZoom();
+    
+    // 1. 更新点与标注
+    pointsLayer.eachLayer(layer => {
+        layer.setStyle(getPointStyle(z));
+        if (z >= 17) layer.openTooltip(); else layer.closeTooltip();
+        if (z < 14) layer.setStyle({opacity:0, fillOpacity:0}); else layer.setStyle({opacity:1, fillOpacity:1});
+    });
+
+    // 2. 更新道路粗细
+    if (layers.roads) {
+        layers.roads.eachLayer(layer => {
+            layer.setStyle(getRoadStyle(z, layer.feature));
+        });
+    }
+});
 
 function setAsStart(coords) {
     userLocation = coords;
@@ -234,13 +317,15 @@ function startNav(name) {
     routes = [];
 
     const configs = isDark ? 
-        [{l:"更短", w:e=>e.l*1.0}, {l:"更安全", w:e=>e.l*0.2+(10-e.s)*0.8}, {l:"环境更好", w:e=>e.l*0.3+(10-e.e)*0.7}] :
-        [{l:"更短", w:e=>e.l*1.0}, {l:"更舒适", w:e=>e.l*0.2+(10-e.e)*0.8}, {l:"更安全", w:e=>e.l*0.4+(10-e.s)*0.6}];
+        [{l:"更短", w:e=>e.l}, {l:"更安全", w:e=>e.l*0.2+(10-e.s)*0.8}, {l:"环境更好", w:e=>e.l*0.3+(10-e.e)*0.7}] :
+        [{l:"更短", w:e=>e.l}, {l:"更舒适", w:e=>e.l*0.2+(10-e.e)*0.8}, {l:"更安全", w:e=>e.l*0.4+(10-e.s)*0.6}];
 
     configs.forEach((cfg, idx) => {
         let res = engine.findPath(userLocation, dest, cfg.w);
-        if (res && idx === 0) res.edgesUsed.forEach(e => e.penalty += 200);
-        if (res) routes.push({ label: cfg.l, path: res.coords, dist: res.distance });
+        if (res) {
+            if (idx === 0) res.edgesUsed.forEach(e => e.penalty += 200);
+            routes.push({ label: cfg.l, path: res.coords, dist: res.distance });
+        }
     });
 
     updatePointStyles(name);
@@ -275,7 +360,8 @@ function switchRoute(idx) {
 function updatePointStyles(targetName = null) {
     pointsLayer.eachLayer(layer => {
         const isTarget = layer.feature.properties.name === targetName;
-        layer.setStyle({ opacity: targetName?(isTarget?1:0.05):1, fillOpacity: targetName?(isTarget?1:0.05):1, radius: isTarget?11:7 });
+        layer.setStyle({ opacity: targetName?(isTarget?1:0.05):1, fillOpacity: targetName?(isTarget?1:0.05):1 });
+        if(isTarget) layer.openTooltip();
     });
 }
 
@@ -287,19 +373,26 @@ function toggleTheme() {
 }
 
 function updateThemeStyles() {
+    const z = map.getZoom();
     const s = isDark ? {
         green: { fillColor: "#0f1a11", color: "#1b3320", weight: 1, fillOpacity: 0.8 },
         water: { fillColor: "#08121c", color: "#1a3d5f", weight: 1, fillOpacity: 0.9 },
-        // 关键修复：建筑物增加明亮的描边和更有质感的填充
-        buildings: { fillColor: "#3a3a45", color: "#8a8a9a", weight: 2.5, fillOpacity: 0.95 }, 
-        roads: { color: "#6e6e7e", weight: 5, opacity: 0.8 } 
+        buildings: { fillColor: "#3a3a45", color: "#8a8a9a", weight: 2.5, fillOpacity: 0.95 }
     } : {
         green: { fillColor: "#b8d8ba", color: "#7ba37d", weight: 1, fillOpacity: 0.7 },
         water: { fillColor: "#a2d2ff", color: "#5fa8d3", weight: 1, fillOpacity: 0.8 },
-        buildings: { fillColor: "#e8e8e8", color: "#777777", weight: 2.5, fillOpacity: 0.8 },
-        roads: { color: "#ffffff", weight: 5, opacity: 1 }
+        buildings: { fillColor: "#e8e8e8", color: "#777777", weight: 2.5, fillOpacity: 0.8 }
     };
+    
+    // 更新面层
     Object.keys(s).forEach(k => { if(layers[k]) layers[k].setStyle(s[k]); });
+    
+    // 更新道路层（根据新主题颜色和当前缩放）
+    if (layers.roads) {
+        layers.roads.eachLayer(layer => {
+            layer.setStyle(getRoadStyle(z, layer.feature));
+        });
+    }
 }
 
 function toggleFold() {
